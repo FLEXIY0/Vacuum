@@ -6,9 +6,11 @@
     follow = mouse
 
     width = 300
-    height = 120
+    # (min, max): grow to fit the body, up to 120px. The bare "height = N"
+    # form still works but is deprecated since dunst 1.12.
+    height = (0, 120)
     origin = top-right
-    offset = 12x38
+    offset = (12, 38)
     scale = 0
 
     notification_limit = 5

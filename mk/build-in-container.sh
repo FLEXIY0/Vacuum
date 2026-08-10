@@ -47,9 +47,11 @@ read_list() {
 
 PKGS="$(read_list "$REPO_ROOT/packages/desktop.pkgs")"
 SERVICES="$(read_list "$REPO_ROOT/packages/services.list")"
+IGNORE="$(read_list "$REPO_ROOT/packages/ignore.list")"
 
 msg "packages: $PKGS"
 msg "services: $SERVICES"
+[ -n "$IGNORE" ] && msg "ignoring: $IGNORE"
 
 # --- build host prerequisites ----------------------------------------------
 msg "installing build dependencies"
@@ -66,8 +68,23 @@ if [ ! -d "$MKLIVE/.git" ]; then
     git clone "$VOID_MKLIVE_REPO" "$MKLIVE"
 fi
 git -C "$MKLIVE" fetch --all --tags --quiet || true
-git -C "$MKLIVE" checkout --quiet "$VOID_MKLIVE_REF"
+git -C "$MKLIVE" checkout --quiet --force "$VOID_MKLIVE_REF"
+git -C "$MKLIVE" clean -qfd
 msg "void-mklive at $(git -C "$MKLIVE" rev-parse --short HEAD)"
+
+# mklive builds the ISO's EFI System Partition by attaching efiboot.img to a
+# loop device and mounting it as vfat. Both requirements come from the host
+# kernel, not the container, and a kernel without vfat fails the mount
+# *silently*: the build finishes and produces an ISO whose EFI volume is
+# empty, so it boots on BIOS and does nothing on UEFI. The patch stages the
+# EFI tree in a directory and copies it in with mtools instead, and makes
+# the step fail loudly if the loaders are missing.
+for p in "$REPO_ROOT"/mk/patches/*.patch; do
+    [ -f "$p" ] || continue
+    msg "applying $(basename "$p")"
+    git -C "$MKLIVE" apply --verbose "$p" ||
+        die "patch $(basename "$p") does not apply to $VOID_MKLIVE_REF"
+done
 
 # --- assemble the include tree ---------------------------------------------
 # mklive copies this over the rootfs after packages are installed, so it is
@@ -92,17 +109,42 @@ ISO="$OUTDIR/vacuum-live-x86_64-${VERSION}-${BUILD_DATE}.iso"
 
 msg "building $(basename "$ISO")"
 cd "$MKLIVE"
-VACUUM_VERSION="$VERSION" VACUUM_BUILD_DATE="$BUILD_DATE" \
-./mklive.sh \
-    -a x86_64 \
-    -r "$XBPS_MIRROR" \
-    -T "Vacuum" \
-    -p "$PKGS" \
-    -S "$SERVICES" \
-    -I "$INCLUDEDIR" \
-    -x "$REPO_ROOT/mk/postsetup.sh" \
-    -s xz \
-    -o "$ISO"
+# -g takes an empty string badly, so only pass it when there is something
+# to ignore.
+set -- -a x86_64 -r "$XBPS_MIRROR" -T "Vacuum" \
+       -p "$PKGS" -S "$SERVICES" -I "$INCLUDEDIR" \
+       -x "$REPO_ROOT/mk/postsetup.sh" -s xz -o "$ISO"
+[ -n "$IGNORE" ] && set -- "$@" -g "$IGNORE"
+
+# A full build pulls well over a gigabyte of packages, and a single dropped
+# connection anywhere in that stream aborts the whole run. mklive removes
+# its build directory when it fails, and the xbps cache survives, so a retry
+# picks up from the packages already on disk rather than starting the
+# download again.
+attempt=1
+until VACUUM_VERSION="$VERSION" VACUUM_BUILD_DATE="$BUILD_DATE" ./mklive.sh "$@"; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -le "${VACUUM_BUILD_ATTEMPTS:-3}" ] ||
+        die "mklive failed $((attempt - 1)) times; see the output above"
+    msg "mklive failed, retrying (attempt $attempt) ..."
+    sleep 5
+done
+
+# --- verify ----------------------------------------------------------------
+# Both boot paths have failed silently here before, so check them rather than
+# trusting that a non-zero exit status means a bootable image.
+msg "verifying boot paths"
+EFI_LIST="$(xorriso -osirrox on -indev "$ISO" -extract /boot/grub/efiboot.img \
+        "$WORKDIR/efiboot.img" 2>/dev/null && \
+    mdir -i "$WORKDIR/efiboot.img" ::/EFI/BOOT 2>/dev/null || true)"
+case "$EFI_LIST" in
+    *BOOTX64*) msg "  UEFI: BOOTX64.EFI present" ;;
+    *)         die "UEFI loader missing from the image -- it would only boot on BIOS" ;;
+esac
+xorriso -indev "$ISO" -find /boot/isolinux -maxdepth 0 >/dev/null 2>&1 &&
+    msg "  BIOS: isolinux present" ||
+    die "isolinux missing from the image"
+rm -f "$WORKDIR/efiboot.img"
 
 msg "done: $ISO ($(du -h "$ISO" | cut -f1))"
 sha256sum "$ISO" | tee "$ISO.sha256"

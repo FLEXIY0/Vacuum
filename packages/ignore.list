@@ -1,0 +1,22 @@
+# Vacuum — packages to keep OUT of the image, even when something depends
+# on them. Passed to mklive's -g. Empty by default.
+#
+# This is the knob for shrinking the ISO. The image is dominated by things
+# that cost disk but no memory, so trimming here changes download size and
+# nothing else about how the running desktop feels:
+#
+#   wifi-firmware      several hundred MB of vendor blobs, pulled in by
+#                      base-system. Dropping it roughly halves the ISO and
+#                      leaves most laptops with no working Wi-Fi, which is
+#                      a bad trade for an image whose job is to install
+#                      itself onto unknown hardware. Uncomment only if you
+#                      know the target machine's network card is supported
+#                      by an in-tree driver, or you will install over
+#                      ethernet.
+#   memtest86+         a boot menu entry, ~2 MB.
+#   dejavu-fonts-ttf   ~7 MB; leaves nothing but bitmap fonts, so tint2 and
+#                      GTK lose their typeface.
+#
+# Uncomment to apply:
+# wifi-firmware
+# memtest86+

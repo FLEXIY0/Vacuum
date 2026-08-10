@@ -1,0 +1,26 @@
+#!/bin/sh
+# Vacuum — low battery warning, called by tint2's battery_low_cmd.
+#
+# tint2 reads a missing battery as 0% and fires the low-battery command as
+# soon as the panel starts, so a desktop with no battery gets a false
+# "battery low" notification on every login. Check for real hardware first,
+# and re-read the charge rather than trusting that tint2 got it right.
+
+for bat in /sys/class/power_supply/BAT*; do
+    [ -r "$bat/capacity" ] || continue
+
+    capacity=$(cat "$bat/capacity" 2>/dev/null) || continue
+    status=$(cat "$bat/status" 2>/dev/null || echo Unknown)
+
+    # Charging is not an emergency, whatever the level.
+    case "$status" in
+        Charging|Full) continue ;;
+    esac
+
+    [ "$capacity" -le 15 ] 2>/dev/null || continue
+
+    notify-send -u critical "Battery low" "${capacity}% remaining."
+    exit 0
+done
+
+exit 0

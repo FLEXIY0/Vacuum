@@ -12,6 +12,8 @@ setxkbmap
 xrandr
 xsetroot
 xprop
+# xset drives the screen-blanking and DPMS settings in openbox/autostart.
+xset
 
 # --- desktop --------------------------------------------------------------
 openbox
@@ -26,6 +28,13 @@ pcmanfm
 # --- session plumbing -----------------------------------------------------
 dbus
 xdg-user-dirs
+
+# Icon themes. hicolor is the fallback every toolkit expects to exist;
+# without it dunst, GTK and pcmanfm log missing-theme warnings and fall back
+# to blank icons. Adwaita costs 13 MB of disk and nothing at runtime beyond
+# the icons actually loaded, and it is what the GTK settings ask for.
+hicolor-icon-theme
+adwaita-icon-theme
 
 # --- audio ----------------------------------------------------------------
 pipewire

@@ -33,4 +33,4 @@ fi
 command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update &
 
 # Screen blanking: 10 minutes, no DPMS-off, no bell.
-xset s 600 600 -dpms b off &
+command -v xset >/dev/null 2>&1 && xset s 600 600 -dpms b off &

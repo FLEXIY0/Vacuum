@@ -17,6 +17,13 @@ Void repositories work, Void's documentation applies.
 - **Memory:** zram (zstd, 60% of RAM) with matching `vm.*` tuning
 - **Power:** TLP
 
+![The Vacuum desktop](docs/preview.png)
+
+*Openbox with the Vacuum theme, tint2 along the top, dunst top-right, and
+`vacuum-ram` reporting what the session costs. Rendered under Xvfb in a
+container, so the "whole machine" rows in that report belong to the build
+host, not to Vacuum — the figure to read is the desktop total.*
+
 ---
 
 ## Build it
@@ -42,6 +49,23 @@ of that works under Docker's default capability set.
 `.github/workflows/build-iso.yml` does the same thing on GitHub Actions —
 run it by hand from the Actions tab, or push a `v*` tag to get an ISO
 attached to a release.
+
+### The one patch to void-mklive
+
+`mk/patches/0001-efi-image-via-mtools.patch` is applied to the pinned
+checkout at build time. Upstream builds the ISO's EFI System Partition by
+attaching `efiboot.img` to a loop device and mounting it as vfat — both of
+which come from the *host* kernel, not the container. On a kernel without
+vfat the mount fails silently, the build finishes with status 0, and the
+result is an ISO with an empty EFI volume: it boots on BIOS and does
+nothing at all on UEFI.
+
+The patch stages the EFI tree in an ordinary directory and copies it into
+the FAT image with `mtools`, which needs no loop device and no kernel
+support, and makes the step fail loudly if the loaders are missing.
+`build-in-container.sh` then re-checks both boot paths in the finished ISO
+before declaring success, because this is exactly the class of failure that
+does not announce itself.
 
 ## Run it
 
@@ -104,29 +128,37 @@ It reports PSS, not RSS: shared libraries are split across the processes
 that map them instead of being counted once per process. RSS totals for a
 desktop like this typically read 40-60% high.
 
-| Component | What it does | Roughly |
+| Component | What it does | Memory |
 | --- | --- | --- |
-| Void base + runit | kernel, init, base services | 35–45 MB |
+| Openbox | window manager | 9.6 MB |
+| tint2 | panel | 9.0 MB |
+| st | terminal, per window | 6.3 MB |
+| dunst | notifications | 4.7 MB |
+| D-Bus | session bus | 0.7 MB |
+| dmenu | launcher — spawned on a key, then gone | 0 MB |
+| nitrogen / feh | wallpaper — sets it and exits | 0 MB |
+| pcmanfm | file manager, on demand | 0 MB |
+| **Desktop layer** | **the rows above, idle** | **~30 MB** |
 | Xorg (`xorg-minimal`) | display server | 30–50 MB |
-| Openbox | window manager | ~2 MB |
-| tint2 | panel | ~8 MB |
-| dunst | notifications | ~4 MB |
-| dmenu | launcher (spawned on a key, then gone) | ~0 MB |
-| nitrogen / feh | wallpaper (sets it and exits) | ~1 MB |
-| pcmanfm | file manager (on demand) | ~0 MB |
-| D-Bus | session and system bus | ~3 MB |
+| Void base + runit | kernel, init, base services | 35–45 MB |
 | PipeWire + WirePlumber | audio | ~15 MB |
 | zram + TLP | compressed swap, power management | ~5 MB |
-| **Total** | **desktop, idle, no browser** | **~105–135 MB** |
+| **Total** | **desktop, idle, no browser** | **~115–145 MB** |
 
-The last three rows are the honest addition to the original sketch: audio
-and a session bus are what make a desktop usable rather than a demo, and
-they cost about 18 MB between them. Drop `pipewire`, `wireplumber` and
-`alsa-pipewire` from `packages/desktop.pkgs` if you would rather have the
-memory than the sound.
+The measured rows come from `vacuum-ram` in a 1366×768 session; the
+estimated ones are ranges because they genuinely vary — Xorg's footprint
+depends on the driver and the resolution, and the base system depends on
+which services you leave running.
 
-Figures are for an idle session on 4 GB of RAM. Xorg's number in particular
-depends on the driver and the resolution, so treat the range as a range.
+Two notes on where this differs from the usual sketch of a setup like this.
+Openbox and tint2 are commonly quoted at 2 MB and 8 MB; measured by PSS
+they are closer to 9 MB each, because a quote that low is counting private
+memory and ignoring the toolkit and font pages the process actually needs.
+And audio plus a session bus — the last of the additions to the original
+package list — cost about 16 MB between them. That is the price of a
+desktop that can play sound and mount a USB stick rather than one that only
+looks the part. Drop `pipewire`, `wireplumber` and `alsa-pipewire` from
+`packages/desktop.pkgs` if you would rather have the memory.
 
 ## zram
 
@@ -150,6 +182,7 @@ build.sh                  host entry point: wraps the build in a container
 mk/
   build-in-container.sh   the actual build; POSIX sh, runs on Void
   postsetup.sh            runs against the finished rootfs before initramfs
+  patches/                applied to the pinned void-mklive checkout
   gen-wallpaper.py        regenerates the wallpaper, no dependencies
   palette.sh              the palette, in one place
 packages/

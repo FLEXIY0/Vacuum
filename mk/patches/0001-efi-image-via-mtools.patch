@@ -1,0 +1,49 @@
+diff --git a/mklive.sh b/mklive.sh
+index 069c8fa..92fbd02 100755
+--- a/mklive.sh
++++ b/mklive.sh
+@@ -385,15 +385,14 @@ EOF
+ 
+     cp -f "$GRUB_DATADIR"/unicode.pf2 "$GRUB_DIR"/fonts
+ 
+-    modprobe -q loop || :
+-
+-    # Create EFI vfat image.
++    # Create EFI vfat image. The EFI tree is staged in a plain directory and
++    # copied in with mtools at the end of this function, so that building an
++    # image does not require loop devices or vfat support in the running
++    # kernel -- neither of which a container is guaranteed to have.
+     truncate -s 32M "$GRUB_DIR"/efiboot.img >/dev/null 2>&1
+     mkfs.vfat -F12 -S 512 -n "grub_uefi" "$GRUB_DIR/efiboot.img" >/dev/null 2>&1
+ 
+     GRUB_EFI_TMPDIR="$(mktemp --tmpdir="$BUILDDIR" -dt grub-efi.XXXXX)"
+-    LOOP_DEVICE="$(losetup --show --find "${GRUB_DIR}"/efiboot.img)"
+-    mount -o rw,flush -t vfat "${LOOP_DEVICE}" "${GRUB_EFI_TMPDIR}" >/dev/null 2>&1
+ 
+ 	build_grub_image() {
+ 		local GRUB_ARCH="$1" EFI_ARCH="$2"
+@@ -403,8 +402,6 @@ EOF
+ 			 --output="/tmp/boot${EFI_ARCH,,}.efi" \
+ 			 "boot/grub/grub.cfg"
+ 		if [ $? -ne 0 ]; then
+-			umount "$GRUB_EFI_TMPDIR"
+-			losetup --detach "${LOOP_DEVICE}"
+ 			die "Failed to generate EFI loader"
+ 		fi
+ 		mkdir -p "${GRUB_EFI_TMPDIR}"/EFI/BOOT
+@@ -427,8 +424,13 @@ EOF
+ 			build_grub_image arm64 aa64
+             ;;
+     esac
+-    umount "$GRUB_EFI_TMPDIR"
+-    losetup --detach "${LOOP_DEVICE}"
++    # Populate the FAT image from the staged tree with mtools.
++    mmd -i "$GRUB_DIR/efiboot.img" ::/EFI ::/EFI/BOOT ||
++        die "Failed to create EFI directories in efiboot.img"
++    mcopy -i "$GRUB_DIR/efiboot.img" "$GRUB_EFI_TMPDIR"/EFI/BOOT/*.EFI ::/EFI/BOOT/ ||
++        die "Failed to copy EFI loaders into efiboot.img"
++    mdir -i "$GRUB_DIR/efiboot.img" ::/EFI/BOOT | grep -q EFI ||
++        die "efiboot.img has no EFI loaders; the image would not boot on UEFI"
+     rm -rf "$GRUB_EFI_TMPDIR"
+ }
+ 

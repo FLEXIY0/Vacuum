@@ -84,12 +84,13 @@ done < "$tmp.sum"
 rm -f "$tmp.sum"
 
 printf '  %s\n' "----------------------------------"
-printf '  %-22s %12s\n' "tracked total" "$(kib_to_human "$desktop")"
+printf '  %-22s %12s\n' "Vacuum desktop" "$(kib_to_human "$desktop")"
 
+printf '\n  \033[2mwhole machine, everything included:\033[0m\n'
 used=$(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { print t - a }' /proc/meminfo)
 total=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
-printf '  %-22s %12s\n' "system in use" "$(kib_to_human "$used")"
-printf '  %-22s %12s\n' "system total" "$(kib_to_human "$total")"
+printf '  %-22s %12s\n' "in use" "$(kib_to_human "$used")"
+printf '  %-22s %12s\n' "installed" "$(kib_to_human "$total")"
 
 # zram, as set up by the zramen service.
 for z in /sys/block/zram*/mm_stat; do

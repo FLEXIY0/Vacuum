@@ -1,18 +1,18 @@
-# Vacuum — tint2 panel. A 26px bar at the bottom: tasks, tray, battery,
-# clock. Flat surfaces, one hairline above the panel, accent only on the
+# Vacuum — tint2 panel. A 26px bar along the top: tasks, tray, battery,
+# clock. Flat surfaces, one hairline under the panel, accent only on the
 # active task.
 
 #---------------------------------------------
 # Backgrounds (referenced below by 1-based index)
 #---------------------------------------------
-# 1: the panel itself
+# 1: the panel itself — hairline on the bottom edge, since it sits on top
 rounded = 0
 border_width = 1
-border_sides = T
+border_sides = B
 background_color = #0b0c0e 100
 border_color = #262a31 100
 
-# 2: active task
+# 2: active task — accent underline along the panel's inner edge
 rounded = 0
 border_width = 2
 border_sides = B
@@ -46,7 +46,7 @@ panel_size = 100% 26
 panel_margin = 0 0
 panel_padding = 4 0 4
 panel_background_id = 1
-panel_position = bottom center horizontal
+panel_position = top center horizontal
 panel_layer = top
 panel_monitor = all
 panel_dock = 0
@@ -56,6 +56,9 @@ autohide = 0
 strut_policy = follow_size
 font_shadow = 0
 mouse_effects = 0
+# The panel has no launcher, but tint2 still resolves this theme at startup
+# and complains if it names one that is not installed.
+launcher_icon_theme = Adwaita
 
 #---------------------------------------------
 # Taskbar
@@ -109,7 +112,10 @@ systray_monitor = 1
 #---------------------------------------------
 battery_tooltip = 1
 battery_low_status = 15
-battery_low_cmd = notify-send -u critical "Battery low"
+# Not a bare notify-send: on a machine with no battery tint2 reads 0% and
+# fires this immediately, so the warning has to check for real hardware
+# first. See /usr/bin/vacuum-battery-warn.
+battery_low_cmd = /usr/bin/vacuum-battery-warn
 battery_hide = 101
 bat1_font = DejaVu Sans 8
 bat2_font = DejaVu Sans 7
