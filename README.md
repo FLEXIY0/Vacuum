@@ -160,6 +160,34 @@ desktop that can play sound and mount a USB stick rather than one that only
 looks the part. Drop `pipewire`, `wireplumber` and `alsa-pipewire` from
 `packages/desktop.pkgs` if you would rather have the memory.
 
+## Why the ISO is 1.5 GB when the desktop is 30 MB
+
+Those two numbers measure different things, and neither is wrong.
+
+The ISO carries every driver blob the image might need on hardware it has
+never seen. Measured from the Void repository:
+
+| | |
+| --- | --- |
+| `linux-firmware-network` | 438 MB |
+| `linux6.18` (kernel + modules) | 166 MB |
+| `linux-firmware-nvidia` | 106 MB |
+| `sof-firmware` | 43 MB |
+| `linux-firmware-amd` | 31 MB |
+| everything else with firmware in the name | ~39 MB |
+| **firmware and kernel** | **~823 MB** |
+| Openbox, tint2, dunst, dmenu, st, pcmanfm | ~6 MB |
+
+None of it costs memory. The kernel loads only the blobs the hardware in
+front of it asks for, so a laptop with an Intel card never pages in the
+Nvidia firmware — it just travelled on the ISO.
+
+If you are building for a machine you already own, `packages/ignore.list`
+takes the vendors you do not have out of the image; the comments in that
+file list the measured sizes. Dropping `linux-firmware-network` roughly
+halves the ISO and leaves most laptops with no Wi-Fi, which is why it is
+not the default for an image meant to install itself onto unknown hardware.
+
 ## zram
 
 `zramen` creates a zstd-compressed swap device sized at 60% of RAM, and
@@ -188,6 +216,7 @@ mk/
 packages/
   desktop.pkgs            what gets installed on top of base-system
   services.list           what runit enables
+  ignore.list             what to keep out — the ISO-size knob
 rootfs/                   copied verbatim over the image's filesystem
   etc/skel/               the user's default configs
   etc/vacuum/             system-wide knobs for the vacuum-* tools
@@ -206,6 +235,7 @@ and it appears in the image; there is no other mechanism.
 | `vacuum-run` | dmenu, in the Vacuum palette |
 | `vacuum-ram` | the memory report above |
 | `vacuum-install` | install to disk (wraps `void-installer`) |
+| `vacuum-battery-warn` | tint2's low-battery hook, called by the panel |
 
 The first two exist because Void builds `st` and `dmenu` from vanilla
 sources: neither reads a config file or the X resource database, so the

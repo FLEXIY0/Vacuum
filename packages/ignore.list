@@ -1,22 +1,39 @@
 # Vacuum — packages to keep OUT of the image, even when something depends
 # on them. Passed to mklive's -g. Empty by default.
 #
-# This is the knob for shrinking the ISO. The image is dominated by things
-# that cost disk but no memory, so trimming here changes download size and
-# nothing else about how the running desktop feels:
+# This is the knob for shrinking the ISO, and it is the only knob that
+# matters: the desktop is a rounding error next to firmware and the kernel.
+# Measured installed sizes from the Void repository:
 #
-#   wifi-firmware      several hundred MB of vendor blobs, pulled in by
-#                      base-system. Dropping it roughly halves the ISO and
-#                      leaves most laptops with no working Wi-Fi, which is
-#                      a bad trade for an image whose job is to install
-#                      itself onto unknown hardware. Uncomment only if you
-#                      know the target machine's network card is supported
-#                      by an in-tree driver, or you will install over
-#                      ethernet.
-#   memtest86+         a boot menu entry, ~2 MB.
-#   dejavu-fonts-ttf   ~7 MB; leaves nothing but bitmap fonts, so tint2 and
-#                      GTK lose their typeface.
+#   linux-firmware-network    438 MB   Wi-Fi and ethernet blobs
+#   linux6.18                 166 MB   kernel and modules
+#   linux-firmware-nvidia     106 MB   Nvidia GPU
+#   sof-firmware               43 MB   Intel audio DSP
+#   linux-firmware-amd         31 MB   AMD GPU and CPU microcode
+#   glibc-locales              19 MB
+#   alsa-firmware              14 MB
+#   adwaita-icon-theme         13 MB
+#   linux-firmware-intel       13 MB   Intel GPU
+#   linux-firmware-broadcom    12 MB
+#   dejavu-fonts-ttf           10 MB
 #
-# Uncomment to apply:
-# wifi-firmware
+# That is ~657 MB of firmware alone, against roughly 40 MB for everything
+# Vacuum actually puts on screen. None of it costs memory at runtime — the
+# kernel loads only the blobs your hardware asks for — so this trades
+# download size against how much unknown hardware the image can boot on.
+#
+# For an image aimed at a machine you already own, dropping the GPU
+# firmware for vendors you do not have is free. Dropping
+# linux-firmware-network halves the ISO and leaves most laptops with no
+# Wi-Fi, which is a bad default for something whose job is to install
+# itself onto hardware it has never seen.
+#
+# Uncomment what you do not need:
+# linux-firmware-nvidia
+# linux-firmware-amd
+# linux-firmware-intel
+# linux-firmware-broadcom
+# sof-firmware
+# alsa-firmware
 # memtest86+
+# linux-firmware-network
