@@ -1,0 +1,42 @@
+! Vacuum — X resources. The Vacuum palette, applied to anything that reads
+! the resource database (xterm, xmessage, …).
+!
+! Note: Void's st and dmenu are built from vanilla sources and do NOT read
+! Xresources — they are themed by the vacuum-term / vacuum-run wrappers,
+! which pass the same colours on the command line.
+
+*background:   #0b0c0e
+*foreground:   #d2d6dc
+*cursorColor:  #5fb8c7
+
+! black
+*color0:       #0b0c0e
+*color8:       #3a4049
+! red
+*color1:       #d4796a
+*color9:       #e39385
+! green
+*color2:       #7fae7a
+*color10:      #97c292
+! yellow
+*color3:       #c9b072
+*color11:      #dbc68d
+! blue
+*color4:       #6f95c4
+*color12:      #8aabd6
+! magenta
+*color5:       #a98cc4
+*color13:      #bda5d6
+! cyan
+*color6:       #5fb8c7
+*color14:      #7fcdda
+! white
+*color7:       #d2d6dc
+*color15:      #eceef2
+
+xterm*faceName:      DejaVu Sans Mono
+xterm*faceSize:      10
+xterm*saveLines:     10000
+xterm*scrollBar:     false
+xterm*termName:      xterm-256color
+xterm*metaSendsEscape: true

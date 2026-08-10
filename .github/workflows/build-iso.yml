@@ -1,0 +1,72 @@
+name: Build ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version stamped into the image'
+        required: false
+        default: '0.1'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="${{ inputs.version }}"
+          fi
+          echo "version=${v:-0.1}" >> "$GITHUB_OUTPUT"
+
+      # The runner has ~14 GB free on /; the rootfs plus squashfs plus ISO
+      # fit, but only after the preinstalled toolchains are out of the way.
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - name: Build
+        run: ./build.sh --version "${{ steps.version.outputs.version }}"
+
+      - name: Report image contents
+        run: |
+          ls -lh out/
+          cat out/*.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vacuum-iso-${{ steps.version.outputs.version }}
+          path: |
+            out/*.iso
+            out/*.sha256
+          retention-days: 14
+          compression-level: 0
+
+      - name: Attach to release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.iso
+            out/*.sha256
+          body: |
+            Vacuum ${{ steps.version.outputs.version }} — live ISO for x86_64.
+
+            Verify the download against the `.sha256` file, write it to a USB
+            stick with `dd`, and boot. The live session logs in as `anon`
+            (password `voidlinux`); install to disk with `sudo vacuum-install`.

@@ -1,0 +1,9 @@
+# Build output — ISOs are far too large for git; the Actions workflow
+# publishes them as release assets instead.
+/out/
+*.iso
+*.iso.sha256
+
+# Scratch space used by mk/build-in-container.sh when run natively.
+/build/
+/xbps-cachedir-*/

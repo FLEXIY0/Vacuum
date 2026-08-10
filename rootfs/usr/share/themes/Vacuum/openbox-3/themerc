@@ -1,0 +1,111 @@
+! Vacuum — Openbox theme. Dark minimalism: hairline borders, flat surfaces,
+! one muted-cyan accent, no gradients and no shadows.
+
+!! borders
+border.width: 1
+border.color: #262a31
+
+!! window titles
+window.active.border.color: #5fb8c7
+window.inactive.border.color: #262a31
+
+window.active.title.bg: flat solid
+window.active.title.bg.color: #131519
+window.active.text.color: #d2d6dc
+
+window.inactive.title.bg: flat solid
+window.inactive.title.bg.color: #0b0c0e
+window.inactive.text.color: #6b7280
+
+window.active.label.bg: parentrelative
+window.inactive.label.bg: parentrelative
+window.label.text.justify: left
+
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #131519
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #0b0c0e
+
+window.active.grip.bg: parentrelative
+window.inactive.grip.bg: parentrelative
+
+window.handle.width: 0
+window.client.padding.width: 0
+window.client.padding.height: 0
+
+!! title buttons — drawn as bare glyphs, no button chrome
+window.active.button.unpressed.bg: parentrelative
+window.active.button.unpressed.image.color: #6b7280
+window.active.button.hover.bg: parentrelative
+window.active.button.hover.image.color: #5fb8c7
+window.active.button.pressed.bg: parentrelative
+window.active.button.pressed.image.color: #d2d6dc
+window.active.button.disabled.bg: parentrelative
+window.active.button.disabled.image.color: #262a31
+window.active.button.toggled.unpressed.bg: parentrelative
+window.active.button.toggled.unpressed.image.color: #5fb8c7
+window.active.button.toggled.hover.bg: parentrelative
+window.active.button.toggled.hover.image.color: #d2d6dc
+window.active.button.toggled.pressed.bg: parentrelative
+window.active.button.toggled.pressed.image.color: #d2d6dc
+
+window.inactive.button.unpressed.bg: parentrelative
+window.inactive.button.unpressed.image.color: #3a4049
+window.inactive.button.hover.bg: parentrelative
+window.inactive.button.hover.image.color: #6b7280
+window.inactive.button.pressed.bg: parentrelative
+window.inactive.button.pressed.image.color: #d2d6dc
+window.inactive.button.disabled.bg: parentrelative
+window.inactive.button.disabled.image.color: #262a31
+window.inactive.button.toggled.unpressed.bg: parentrelative
+window.inactive.button.toggled.unpressed.image.color: #6b7280
+window.inactive.button.toggled.hover.bg: parentrelative
+window.inactive.button.toggled.hover.image.color: #d2d6dc
+window.inactive.button.toggled.pressed.bg: parentrelative
+window.inactive.button.toggled.pressed.image.color: #d2d6dc
+
+!! menus
+menu.border.width: 1
+menu.border.color: #262a31
+menu.overlap.x: 0
+menu.overlap.y: 0
+
+menu.title.bg: flat solid
+menu.title.bg.color: #0b0c0e
+menu.title.text.color: #6b7280
+menu.title.text.justify: left
+
+menu.items.bg: flat solid
+menu.items.bg.color: #131519
+menu.items.text.color: #d2d6dc
+menu.items.disabled.text.color: #3a4049
+
+menu.items.active.bg: flat solid
+menu.items.active.bg.color: #1a1d22
+menu.items.active.text.color: #5fb8c7
+
+menu.separator.color: #262a31
+menu.separator.width: 1
+menu.separator.padding.width: 4
+menu.separator.padding.height: 3
+
+!! on-screen displays (resize/move popups, desktop switcher)
+osd.border.width: 1
+osd.border.color: #262a31
+osd.bg: flat solid
+osd.bg.color: #131519
+osd.label.bg: parentrelative
+osd.label.text.color: #d2d6dc
+osd.hilight.bg: flat solid
+osd.hilight.bg.color: #5fb8c7
+osd.unhilight.bg: flat solid
+osd.unhilight.bg.color: #262a31
+
+!! typography and spacing
+window.label.text.font: shadow=n
+menu.items.font: shadow=n
+menu.title.font: shadow=n
+osd.font: shadow=n
+
+padding.width: 6
+padding.height: 3

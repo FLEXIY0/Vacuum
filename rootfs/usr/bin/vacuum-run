@@ -1,0 +1,40 @@
+#!/bin/sh
+# Vacuum — application launcher.
+#
+# dmenu is vanilla too, so its colours come from the command line rather
+# than a config file. These are the same values as the rest of the palette.
+#
+#   vacuum-run            list $PATH and run the choice   (Super+d)
+#   vacuum-run --stdin    read choices on stdin, print the pick (dunst)
+#
+# Override any of the settings below in /etc/vacuum/menu.conf.
+
+[ -f /etc/vacuum/menu.conf ] && . /etc/vacuum/menu.conf
+
+: "${VACUUM_MENU_FONT:=DejaVu Sans Mono-10}"
+: "${VACUUM_MENU_BG:=#0b0c0e}"
+: "${VACUUM_MENU_FG:=#d2d6dc}"
+: "${VACUUM_MENU_SEL_BG:=#5fb8c7}"
+: "${VACUUM_MENU_SEL_FG:=#0b0c0e}"
+: "${VACUUM_MENU_LINES:=0}"
+
+mode=run
+if [ "$1" = "--stdin" ]; then
+    mode=filter
+    shift
+fi
+
+set -- -fn "$VACUUM_MENU_FONT" \
+       -nb "$VACUUM_MENU_BG" -nf "$VACUUM_MENU_FG" \
+       -sb "$VACUUM_MENU_SEL_BG" -sf "$VACUUM_MENU_SEL_FG" \
+       "$@"
+
+if [ "$VACUUM_MENU_LINES" -gt 0 ] 2>/dev/null; then
+    set -- -l "$VACUUM_MENU_LINES" "$@"
+fi
+
+if [ "$mode" = run ]; then
+    exec dmenu_run -p "run" "$@"
+else
+    exec dmenu "$@"
+fi

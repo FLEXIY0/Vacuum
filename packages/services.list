@@ -1,0 +1,9 @@
+# Vacuum — runit services enabled in the live image.
+# mklive.sh always enables udevd and agetty-tty1..6 on top of these.
+
+dbus            # session/system bus, needed by pcmanfm and wireplumber
+dhcpcd          # wired + wireless DHCP
+wpa_supplicant  # Wi-Fi
+acpid           # lid / power button events
+zramen          # compressed RAM swap
+tlp             # power management

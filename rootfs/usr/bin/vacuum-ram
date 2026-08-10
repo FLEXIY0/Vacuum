@@ -1,0 +1,113 @@
+#!/bin/sh
+# Vacuum — memory report.
+#
+# Prints what the desktop actually costs right now, per component, using PSS
+# (proportional set size) so shared libraries are not counted twice. PSS for
+# processes owned by another user — Xorg, mainly — is only readable as root,
+# so run this with sudo for a complete picture; without it those processes
+# fall back to RSS, which over-counts shared pages.
+#
+#   vacuum-ram          print the report
+#   vacuum-ram --wait   print it and wait for Enter (for menu entries)
+
+# Deliberately no `set -e`: several probes below are expected to fail on
+# machines without zram, or on processes that vanish while being read.
+want_wait=0
+[ "$1" = "--wait" ] && want_wait=1
+
+kib_to_human() {
+    awk -v k="$1" 'BEGIN {
+        if (k >= 1048576) printf "%.1f GiB", k / 1048576
+        else if (k >= 1024) printf "%.1f MiB", k / 1024
+        else printf "%d KiB", k
+    }'
+}
+
+# Map a process name to a report row. Anything unmatched is left out of the
+# desktop subtotal but still shows up in "system used".
+classify() {
+    case "$1" in
+        Xorg|X)                                  echo "Xorg" ;;
+        openbox|openbox-session)                 echo "Openbox" ;;
+        tint2)                                   echo "tint2" ;;
+        dunst)                                   echo "dunst" ;;
+        dmenu|dmenu_run)                         echo "dmenu" ;;
+        st)                                      echo "st (terminal)" ;;
+        pcmanfm)                                 echo "pcmanfm" ;;
+        nitrogen|feh)                            echo "wallpaper" ;;
+        pipewire|pipewire-pulse|wireplumber)     echo "PipeWire" ;;
+        dbus-daemon|dbus-run-session)            echo "D-Bus" ;;
+        runit|runsvdir|runsv|svlogd)             echo "runit" ;;
+        udevd|systemd-udevd)                     echo "udevd" ;;
+        dhcpcd|wpa_supplicant)                   echo "network" ;;
+        tlp|tlpd)                                echo "TLP" ;;
+        *)                                       echo "" ;;
+    esac
+}
+
+# --- collect ---------------------------------------------------------------
+tmp=$(mktemp) || exit 1
+trap 'rm -f "$tmp"' EXIT INT TERM
+
+exact=1
+for d in /proc/[0-9]*; do
+    [ -r "$d/comm" ] || continue
+    comm=$(cat "$d/comm" 2>/dev/null) || continue
+    row=$(classify "$comm")
+    [ -n "$row" ] || continue
+
+    kib=$(awk '/^Pss:/ { s += $2 } END { print s+0 }' "$d/smaps_rollup" 2>/dev/null || echo 0)
+    if [ "${kib:-0}" -eq 0 ]; then
+        # Not permitted to read PSS (another user's process): use RSS.
+        kib=$(awk '/^VmRSS:/ { print $2 }' "$d/status" 2>/dev/null || echo 0)
+        [ "${kib:-0}" -gt 0 ] && exact=0
+    fi
+    [ "${kib:-0}" -gt 0 ] && printf '%s\t%s\n' "$row" "$kib" >> "$tmp"
+done
+
+# --- report ----------------------------------------------------------------
+printf '\n\033[1;36m  Vacuum\033[0m memory report\n\n'
+printf '  %-22s %12s\n' "component" "memory"
+printf '  %s\n' "----------------------------------"
+
+desktop=0
+# Sum per row, keeping a stable order by first appearance of each name.
+sort -k1,1 -t'	' "$tmp" | awk -F'\t' '
+    { sum[$1] += $2; if (!($1 in seen)) { seen[$1]; order[++n] = $1 } }
+    END { for (i = 1; i <= n; i++) printf "%s\t%d\n", order[i], sum[order[i]] }
+' > "$tmp.sum"
+
+while IFS='	' read -r name kib; do
+    printf '  %-22s %12s\n' "$name" "$(kib_to_human "$kib")"
+    desktop=$((desktop + kib))
+done < "$tmp.sum"
+rm -f "$tmp.sum"
+
+printf '  %s\n' "----------------------------------"
+printf '  %-22s %12s\n' "tracked total" "$(kib_to_human "$desktop")"
+
+used=$(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { print t - a }' /proc/meminfo)
+total=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+printf '  %-22s %12s\n' "system in use" "$(kib_to_human "$used")"
+printf '  %-22s %12s\n' "system total" "$(kib_to_human "$total")"
+
+# zram, as set up by the zramen service.
+for z in /sys/block/zram*/mm_stat; do
+    [ -r "$z" ] || continue
+    dev=$(basename "$(dirname "$z")")
+    set -- $(cat "$z")
+    orig=$((${1:-0} / 1024))
+    compr=$((${2:-0} / 1024))
+    printf '  %-22s %12s\n' "$dev (stored)" "$(kib_to_human "$orig")"
+    printf '  %-22s %12s\n' "$dev (compressed)" "$(kib_to_human "$compr")"
+done
+
+if [ "$exact" -eq 0 ]; then
+    printf '\n  \033[2mSome processes fell back to RSS; run "sudo vacuum-ram"\n  for exact proportional figures.\033[0m\n'
+fi
+printf '\n'
+
+if [ "$want_wait" -eq 1 ]; then
+    printf '  Press Enter to close. '
+    read -r _
+fi

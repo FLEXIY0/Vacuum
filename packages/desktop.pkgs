@@ -1,0 +1,52 @@
+# Vacuum — package set installed on top of base-system.
+# One package per line. '#' starts a comment. Empty lines are ignored.
+#
+# base-system already brings: linux, runit-void, dhcpcd, wpa_supplicant,
+# iw, wifi-firmware, acpid, eudev, sudo, openssh, util-linux, kbd, xbps.
+
+# --- graphics stack -------------------------------------------------------
+# xorg-minimal pulls xorg-server + xauth + xinit + xf86-input-libinput.
+xorg-minimal
+mesa-dri
+setxkbmap
+xrandr
+xsetroot
+xprop
+
+# --- desktop --------------------------------------------------------------
+openbox
+tint2
+dunst
+dmenu
+st
+nitrogen
+feh
+pcmanfm
+
+# --- session plumbing -----------------------------------------------------
+dbus
+xdg-user-dirs
+
+# --- audio ----------------------------------------------------------------
+pipewire
+wireplumber
+alsa-pipewire
+
+# --- memory + power -------------------------------------------------------
+zramen
+tlp
+
+# --- fonts ----------------------------------------------------------------
+# terminus for the console and st, dejavu for anything Pango-based (tint2,
+# GTK). font-misc-misc supplies the X11 "fixed" fallback.
+terminus-font
+dejavu-fonts-ttf
+font-misc-misc
+
+# --- installer ------------------------------------------------------------
+# void-installer is a shell script shipped by void-mklive, not a package; it
+# needs dialog, and grub for whichever firmware the target machine uses.
+dialog
+grub-x86_64-efi
+grub-i386-efi
+xmirror

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+
+  <menu id="root-menu" label="Vacuum">
+    <item label="Terminal">
+      <action name="Execute"><command>vacuum-term</command></action>
+    </item>
+    <item label="Run…">
+      <action name="Execute"><command>vacuum-run</command></action>
+    </item>
+    <item label="Files">
+      <action name="Execute"><command>pcmanfm</command></action>
+    </item>
+
+    <separator/>
+
+    <menu id="system-menu" label="System">
+      <item label="Memory report">
+        <action name="Execute"><command>vacuum-term -e vacuum-ram --wait</command></action>
+      </item>
+      <item label="Install Vacuum to disk">
+        <action name="Execute"><command>vacuum-term -e sudo vacuum-install</command></action>
+      </item>
+      <item label="Wallpaper">
+        <action name="Execute"><command>nitrogen</command></action>
+      </item>
+      <separator/>
+      <item label="Reconfigure Openbox">
+        <action name="Reconfigure"/>
+      </item>
+    </menu>
+
+    <separator/>
+
+    <menu id="client-list-menu"/>
+
+    <separator/>
+
+    <item label="Log out">
+      <action name="Exit"><prompt>yes</prompt></action>
+    </item>
+    <item label="Reboot">
+      <action name="Execute"><command>sudo shutdown -r now</command></action>
+    </item>
+    <item label="Shut down">
+      <action name="Execute"><command>sudo shutdown -h now</command></action>
+    </item>
+  </menu>
+
+</openbox_menu>

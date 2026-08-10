@@ -1,0 +1,9 @@
+# Vacuum release identity. Shell-sourceable.
+# VERSION and BUILD_DATE are rewritten at build time by mk/postsetup.sh.
+NAME="Vacuum"
+ID="vacuum"
+ID_LIKE="void"
+VERSION="0.1"
+BUILD_DATE="unset"
+BASE="Void Linux (glibc, x86_64)"
+HOME_URL="https://github.com/FLEXIY0/Vacuum"

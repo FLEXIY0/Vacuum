@@ -1,0 +1,24 @@
+#!/bin/sh
+# Vacuum — terminal launcher.
+#
+# Void's st is built from vanilla sources: it has no config file and does not
+# read Xresources, so the only thing that can be set from outside is the
+# font. Its stock palette is already black-on-grey, which suits Vacuum.
+# Everything after -- (or any argument) is passed straight through, so
+# `vacuum-term -e some-command` works exactly like `st -e some-command`.
+#
+# Override the font system-wide in /etc/vacuum/term.conf or per user by
+# exporting VACUUM_TERM_FONT.
+
+[ -f /etc/vacuum/term.conf ] && . /etc/vacuum/term.conf
+
+: "${VACUUM_TERM_FONT:=DejaVu Sans Mono:pixelsize=14:antialias=true:autohint=true}"
+
+if command -v st >/dev/null 2>&1; then
+    exec st -f "$VACUUM_TERM_FONT" "$@"
+elif command -v xterm >/dev/null 2>&1; then
+    exec xterm "$@"
+else
+    echo "vacuum-term: no terminal emulator found" >&2
+    exit 1
+fi

@@ -1,0 +1,36 @@
+#!/bin/sh
+# Vacuum — Openbox session autostart.
+#
+# Everything here is started on demand and kept deliberately small; see
+# `vacuum-ram` for what the running set actually costs.
+
+# Wallpaper. nitrogen remembers a user-chosen image and exits; if it has
+# nothing saved yet, fall back to the stock Vacuum wallpaper via feh.
+if command -v nitrogen >/dev/null 2>&1 && [ -f "$HOME/.config/nitrogen/bg-saved.cfg" ]; then
+    nitrogen --restore &
+elif command -v feh >/dev/null 2>&1; then
+    feh --no-fehbg --bg-fill /usr/share/vacuum/wallpaper.png &
+else
+    xsetroot -solid '#0b0c0e' &
+fi
+
+# A sane cursor on the root window instead of the X11 default "X".
+xsetroot -cursor_name left_ptr &
+
+# Panel and notifications.
+tint2 &
+dunst &
+
+# Audio. PipeWire is a user service: it needs the session bus that
+# .xinitrc sets up, so it belongs here rather than in a runit service.
+if command -v pipewire >/dev/null 2>&1; then
+    pipewire &
+    pipewire-pulse &
+    wireplumber &
+fi
+
+# XDG directories (~/Desktop, ~/Downloads, …) for pcmanfm.
+command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update &
+
+# Screen blanking: 10 minutes, no DPMS-off, no bell.
+xset s 600 600 -dpms b off &

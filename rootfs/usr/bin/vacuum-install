@@ -1,0 +1,56 @@
+#!/bin/sh
+# Vacuum — install the running live system to disk.
+#
+# This is a wrapper around void-installer, the dialog-based installer that
+# void-mklive ships on the ISO. The wrapper exists to make one thing
+# explicit: only the "local" source copies the *Vacuum* system to disk.
+# Picking "network" would install a stock Void base-system instead, and the
+# desktop, theme and tools you are looking at would not come along.
+#
+# "local" is also void-installer's default, so the safe answer is to leave
+# the Source step alone.
+
+VOID_INSTALLER=
+for c in /usr/bin/void-installer /usr/sbin/void-installer; do
+    [ -x "$c" ] && VOID_INSTALLER="$c" && break
+done
+
+if [ -z "$VOID_INSTALLER" ]; then
+    echo "vacuum-install: void-installer is not present on this system." >&2
+    echo "It ships on the Vacuum live ISO only." >&2
+    exit 1
+fi
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "vacuum-install: must be run as root (try: sudo vacuum-install)" >&2
+    exit 1
+fi
+
+cat <<'EOF'
+
+  Vacuum installer
+
+  This copies the running live system to a disk of your choice, then
+  removes the live-only bits (the temporary "anon" user, its passwordless
+  sudo rule, the autologin) and rebuilds the initramfs for real hardware.
+
+  In the installer menu:
+
+    Source      leave it on "Local". "Network" installs plain Void,
+                without the Vacuum desktop.
+    Bootloader  pick the disk you are installing to, unless you manage
+                your own bootloader.
+    Partition   Vacuum has no automatic partitioner; cfdisk is offered.
+
+  Anything you set up here — user, hostname, locale, timezone — is applied
+  to the installed system, not to this live session.
+
+EOF
+
+printf '  Continue? [Y/n] '
+read -r reply
+case "$reply" in
+    [Nn]*) echo "  Cancelled."; exit 0 ;;
+esac
+
+exec "$VOID_INSTALLER"
