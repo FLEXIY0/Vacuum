@@ -7,6 +7,11 @@ on:
         description: 'Version stamped into the image'
         required: false
         default: '0.1'
+      release:
+        description: 'Publish the ISO as a GitHub release (otherwise it is only a run artifact, kept 14 days)'
+        type: boolean
+        required: false
+        default: true
   push:
     tags:
       - 'v*'
@@ -57,10 +62,15 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+      # A tag push publishes under that tag. A manual run publishes under
+      # v<version>, creating the tag if it does not exist yet, so an ISO can
+      # be released without pushing a tag by hand.
       - name: Attach to release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Vacuum ${{ steps.version.outputs.version }}
           files: |
             out/*.iso
             out/*.sha256
