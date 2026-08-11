@@ -50,6 +50,7 @@ WHO="${SUDO_USER:-$(id -un)}"
 # that has no sound card. That is the path this tool exists for, and it is
 # the one that must not fall over halfway through the report.
 ASOUND="${VACUUM_ASOUND:-/proc/asound/cards}"
+PCIDEV="${VACUUM_PCI:-/sys/bus/pci/devices}"
 
 # --- the test tone ----------------------------------------------------------
 if [ "$MODE" = test ]; then
@@ -60,6 +61,37 @@ if [ "$MODE" = test ]; then
     echo "speaker-test is missing:  sudo xbps-install -S alsa-utils" >&2
     exit 1
 fi
+
+# --- the hardware itself ----------------------------------------------------
+# Read from sysfs rather than by running lspci: pciutils is not part of a
+# Vacuum install, and the two files needed are always there. Class 0403 is
+# "audio device", 0401 the older "multimedia audio controller".
+pci_audio() {
+    found=0
+    for d in "$PCIDEV"/*; do
+        [ -r "$d/class" ] || continue
+        case "$(cat "$d/class" 2>/dev/null)" in
+            0x0403*|0x0401*) ;;
+            *) continue ;;
+        esac
+        found=1
+        drv=""
+        if [ -L "$d/driver" ]; then
+            drv=$(readlink "$d/driver" 2>/dev/null) || drv=""
+            drv="${drv##*/}"
+        fi
+        printf '      %s  [%s:%s]  driver: %s\n' "${d##*/}" \
+            "$(cut -c3- "$d/vendor" 2>/dev/null)" \
+            "$(cut -c3- "$d/device" 2>/dev/null)" \
+            "${drv:-NONE BOUND}"
+    done
+    [ "$found" = 1 ] || printf '      (no PCI audio device at all)\n'
+}
+
+snd_modules() {
+    mods=$(lsmod 2>/dev/null | awk '/^snd/ { printf "%s ", $1 }') || mods=""
+    printf '      %s\n' "${mods:-(no snd modules loaded)}"
+}
 
 # --- 1. does the kernel see a card? -----------------------------------------
 section "sound card"
@@ -74,11 +106,25 @@ fi
 if [ "$CARDS" -gt 0 ]; then
     sed -n 's/^ *\([0-9][0-9]*\) \[\([^]]*\)\].*: \(.*\)/  + card \1: \3/p' \
         "$ASOUND" 2>/dev/null | sed "s/^  +/  ${G}+${N}/"
+    # The codec decides which controls exist and which quirks apply, so it
+    # is the single most useful line to have when a mixer looks wrong.
+    for c in /proc/asound/card*/codec#*; do
+        [ -r "$c" ] || continue
+        sed -n 's/^Codec: /      codec: /p' "$c" 2>/dev/null
+    done
 else
     bad "the kernel found no sound card"
-    info "Without a card nothing else here can help. Check that the audio"
-    info "driver loaded:   lsmod | grep snd"
-    info "and look for errors:   dmesg | grep -i -e snd -e hda"
+    # Everything needed to work out why, gathered here rather than left as
+    # three commands to run by hand -- this is the case where the person
+    # reading has the least to go on.
+    info "PCI audio hardware:"
+    pci_audio
+    info "loaded sound modules:"
+    snd_modules
+    info ""
+    info "A PCI device with no driver bound means the module is missing or"
+    info "failed to load:   sudo modprobe snd_hda_intel   then check dmesg."
+    info "No PCI audio device at all means the card is disabled in the BIOS."
     # Nothing further is meaningful.
     printf '\n%s1 problem found.%s\n' "$R" "$N"
     exit 1
