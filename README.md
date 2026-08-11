@@ -451,7 +451,15 @@ underneath it was off.
 v0.2 ships `alsa-utils` and enables the `alsa` service, which restores the
 mixer at boot and saves it at shutdown. `vacuum-sound` walks the whole
 chain — card, device nodes, mixer, group membership, service, PipeWire sink
-— and names the link that is broken rather than leaving you to guess.
+— and names the link that is broken rather than leaving you to guess. When
+no card turns up at all it reports the PCI audio hardware and which driver
+is bound to it, read from sysfs, so there is nothing left to run by hand.
+
+One trap worth knowing: `/etc/alsa/conf.d` routes ALSA's *default* device
+through PipeWire. While PipeWire is down — on a tty, say — every ALSA
+program fails too, and a healthy card looks dead. `vacuum-sound --test`
+falls back from `default` to `hw:0` for exactly that reason, which is what
+tells "PipeWire is not running" apart from "the card is broken".
 
 ## Keyboard backlight
 
