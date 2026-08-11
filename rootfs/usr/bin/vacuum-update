@@ -5,6 +5,12 @@
 #   vacuum-update --check    show what would change, write nothing
 #   vacuum-update --rollback undo the last update
 #   vacuum-update --ref REF  a specific branch, tag or commit
+#   vacuum-update --force    take the new version of every file
+#
+# --force exists for one situation: the baseline snapshot is missing or
+# stale, so files you never touched are being reported as yours and written
+# beside themselves as .new. It overwrites them with the shipped versions.
+# The backup is taken exactly as usual, so --rollback still undoes it.
 #
 # The one rule: never destroy a change you made by hand. Each file is
 # decided from three versions of itself.
@@ -33,6 +39,7 @@ ROOT="${VACUUM_ROOT:-/}"
 REF=""
 MODE=apply
 ASSUME_YES=0
+FORCE=0
 
 REPORTED=0
 die()  { printf '\033[1;31m%s:\033[0m %s\n' "$SELF" "$*" >&2; REPORTED=1; exit 1; }
@@ -42,11 +49,14 @@ die()  { printf '\033[1;31m%s:\033[0m %s\n' "$SELF" "$*" >&2; REPORTED=1; exit 1
 # is not hypothetical: a failing `ln` in the services loop once skipped the
 # session reload, the snapshot and the release stamp, in silence. Anything
 # that leaves by an unplanned route now says so.
-trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$REPORTED" -eq 0 ]; then
-        printf "\n\033[1;31m::\033[0m %s stopped early (status %s).\n" "$SELF" "$rc" >&2
-        printf "   The system may be partly updated. Running it again is safe\n" >&2
-        printf "   and will finish the job; undo with: sudo %s --rollback\n" "$SELF" >&2
-      fi' EXIT
+report_early_exit() {
+    [ "$1" -ne 0 ] || return 0
+    [ "$REPORTED" -eq 0 ] || return 0
+    printf "\n\033[1;31m::\033[0m %s stopped early (status %s).\n" "$SELF" "$1" >&2
+    printf "   The system may be partly updated. Running it again is safe\n" >&2
+    printf "   and will finish the job; undo with: sudo %s --rollback\n" "$SELF" >&2
+}
+trap 'report_early_exit $?' EXIT
 msg()  { printf '\n\033[1;36m::\033[0m %s\n' "$*"; }
 note() { printf '   %s\n' "$*"; }
 
@@ -57,7 +67,8 @@ while [ $# -gt 0 ]; do
         --ref)      REF="${2:?--ref needs a branch, tag or commit}"; shift 2 ;;
         --root)     ROOT="${2:?--root needs a directory}"; shift 2 ;;
         -y|--yes)   ASSUME_YES=1; shift ;;
-        -h|--help)  sed -n '2,29p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --force)    FORCE=1; shift ;;
+        -h|--help)  sed -n '2,33p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *)          die "unknown option: $1  (try --help)" ;;
     esac
 done
@@ -143,7 +154,12 @@ fetch_tree() {
 }
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT INT TERM
+# Installing a second EXIT trap replaces the first, so this one has to do
+# both jobs: without that, every failure after this line lost its report --
+# which is every failure that matters.
+trap 'rc=$?; rm -rf "$WORK" 2>/dev/null; report_early_exit "$rc"' EXIT
+trap 'rm -rf "$WORK" 2>/dev/null; exit 130' INT
+trap 'rm -rf "$WORK" 2>/dev/null; exit 143' TERM
 
 msg "fetching $VACUUM_REPO at $REF"
 fetch_tree "$REF" "$WORK/new" || die "could not fetch $REF from $VACUUM_REPO"
@@ -175,6 +191,7 @@ plan_file() {
     if [ ! -e "$dest" ];        then action=install
     elif same "$src" "$dest";   then action=keep
     elif same "$base" "$dest";  then action=update
+    elif [ "$FORCE" -eq 1 ];    then action=update
     else                             action=yours
     fi
     printf '%s\t%s\t%s\t%s\n' "$action" "$src" "$dest" "$owner" >> "$PLAN"
