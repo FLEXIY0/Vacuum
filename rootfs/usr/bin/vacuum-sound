@@ -17,6 +17,18 @@
 
 set -eu
 
+# A diagnostic that stops halfway without saying so is worse than none: the
+# sections that never printed read as checks that passed. `set -e` exits
+# mutely and usually with status 1 -- which is also this tool's legitimate
+# "problems found" status -- so the two cannot be told apart by exit code.
+# Every deliberate exit goes through finish(); anything else is a bug here.
+COMPLETE=0
+trap 'if [ "$COMPLETE" -eq 0 ]; then
+        printf "\n%s: the report stopped early. That is a fault in this tool,\n" "${0##*/}" >&2
+        printf "not a finding about your machine -- please report it.\n" >&2
+      fi' EXIT
+finish() { COMPLETE=1; exit "${1:-0}"; }
+
 PROBLEMS=0
 FIXABLE=""
 MODE=check
@@ -25,8 +37,8 @@ for arg in "$@"; do
     case "$arg" in
         --fix)  MODE=fix ;;
         --test) MODE=test ;;
-        -h|--help) sed -n '2,7p' "$0" | sed 's/^# \?//'; exit 0 ;;
-        *) echo "unknown option: $arg" >&2; exit 1 ;;
+        -h|--help) sed -n '2,7p' "$0" | sed 's/^# \?//'; finish 0 ;;
+        *) echo "unknown option: $arg" >&2; finish 1 ;;
     esac
 done
 
@@ -56,7 +68,7 @@ PCIDEV="${VACUUM_PCI:-/sys/bus/pci/devices}"
 if [ "$MODE" = test ]; then
     command -v speaker-test >/dev/null 2>&1 || {
         echo "speaker-test is missing:  sudo xbps-install -S alsa-utils" >&2
-        exit 1
+        finish 1
     }
 
     tone() {
@@ -70,7 +82,7 @@ if [ "$MODE" = test ]; then
     echo "Playing a 440 Hz tone through the default device..."
     if tone ""; then
         echo "Done -- if you heard it, the whole path works."
-        exit 0
+        finish 0
     fi
 
     # The default device is routed through PipeWire by /etc/alsa/conf.d, so
@@ -83,18 +95,18 @@ if [ "$MODE" = test ]; then
 
     card=$(sed -n 's/^ *\([0-9][0-9]*\) \[.*/\1/p' "$ASOUND" 2>/dev/null |
         head -1) || card=""
-    [ -n "$card" ] || { echo "No card to try." >&2; exit 1; }
+    [ -n "$card" ] || { echo "No card to try." >&2; finish 1; }
 
     if tone "hw:$card"; then
         echo
         echo "Heard it that time? Then the card and the mixer are fine and"
         echo "the problem is PipeWire, not the hardware. It starts from"
         echo "~/.config/openbox/autostart when a desktop session begins."
-        exit 0
+        finish 0
     fi
 
     echo "The card would not play either. Run  vacuum-sound  for why." >&2
-    exit 1
+    finish 1
 fi
 
 # --- the hardware itself ----------------------------------------------------
@@ -162,7 +174,7 @@ else
     info "No PCI audio device at all means the card is disabled in the BIOS."
     # Nothing further is meaningful.
     printf '\n%s1 problem found.%s\n' "$R" "$N"
-    exit 1
+    finish 1
 fi
 
 # /dev/snd has to be reachable by whoever is playing, and without a seat
@@ -187,11 +199,18 @@ fi
 # --- 3. is anything muted? --------------------------------------------------
 if command -v amixer >/dev/null 2>&1; then
     section "mixer state"
+    # `if` rather than `test && action` as the last statement of the loop
+    # body: a while loop exits with the status of its final command, so on a
+    # card whose last control happens not to be muted the substitution
+    # returned 1 and `set -e` killed the report right here -- in silence,
+    # halfway through the thing whose whole job is to explain itself.
     MUTED=$(amixer scontrols 2>/dev/null |
         sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" |
         while read -r c; do
-            amixer sget "$c" 2>/dev/null | grep -q '\[off\]' && printf '%s ' "$c"
-        done)
+            if amixer sget "$c" 2>/dev/null | grep -q '\[off\]'; then
+                printf '%s ' "$c"
+            fi
+        done) || true
     ZERO=$(amixer sget Master 2>/dev/null | grep -o '\[[0-9]*%\]' | head -1 |
         tr -d '[]%')
 
@@ -206,6 +225,18 @@ if command -v amixer >/dev/null 2>&1; then
         bad "Master is at 0%"
         FIXABLE="$FIXABLE unmute"
     fi
+
+    # The full list, because which controls exist is decided by the codec
+    # and no fixed set of names covers every one of them. When the volume
+    # reads as unavailable, this is the line that says why.
+    info "controls this card offers:"
+    amixer scontrols 2>/dev/null |
+        sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" |
+        while read -r c; do
+            state=$(amixer sget "$c" 2>/dev/null |
+                grep -o '\[[0-9]*%\]\|\[off\]\|\[on\]' | tr '\n' ' ')
+            printf '        %-22s %s\n' "$c" "${state:-(no playback volume)}"
+        done
 
     if [ -f /var/lib/alsa/asound.state ]; then
         ok "mixer state is saved, so it survives a reboot"
@@ -283,7 +314,7 @@ if [ "$MODE" = fix ]; then
     section "fixing"
     if [ "$(id -u)" -ne 0 ]; then
         echo "  --fix needs root:  sudo vacuum-sound --fix" >&2
-        exit 1
+        finish 1
     fi
 
     case "$FIXABLE" in *pkg*)
@@ -324,7 +355,7 @@ if [ "$MODE" = fix ]; then
     esac
 
     printf '\n%sDone. Test it with:%s  vacuum-sound --test\n' "$C" "$N"
-    exit 0
+    finish 0
 fi
 
 # --- summary ----------------------------------------------------------------
@@ -335,5 +366,5 @@ else
     printf '\n%s%d problem(s) found.%s Most of this can be fixed with:\n' \
         "$R" "$PROBLEMS" "$N"
     printf '\n    sudo vacuum-sound --fix\n'
-    exit 1
+    finish 1
 fi

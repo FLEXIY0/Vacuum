@@ -47,7 +47,20 @@ alsa_ctl() {
     for c in Master PCM Speaker Headphone Front; do
         amixer sget "$c" >/dev/null 2>&1 && { printf '%s' "$c"; return 0; }
     done
-    return 1
+
+    # None of the familiar names exist. That is not a broken card -- codecs
+    # ship whose only output control is called something else entirely, and
+    # a fixed list of five names reports "no audio device" on them, which is
+    # both wrong and unhelpful. Take the first control that actually carries
+    # a playback volume.
+    found=$(amixer scontrols 2>/dev/null |
+        sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" |
+        while read -r n; do
+            amixer sget "$n" 2>/dev/null | grep -q pvolume &&
+                { printf '%s' "$n"; break; }
+        done)
+    [ -n "$found" ] || return 1
+    printf '%s' "$found"
 }
 
 alsa_read() {

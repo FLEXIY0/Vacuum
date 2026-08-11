@@ -34,7 +34,19 @@ REF=""
 MODE=apply
 ASSUME_YES=0
 
-die()  { printf '\033[1;31m%s:\033[0m %s\n' "$SELF" "$*" >&2; exit 1; }
+REPORTED=0
+die()  { printf '\033[1;31m%s:\033[0m %s\n' "$SELF" "$*" >&2; REPORTED=1; exit 1; }
+
+# `set -e` aborts without a word, so a step failing halfway through looks
+# from the outside exactly like a run that finished and did nothing. That
+# is not hypothetical: a failing `ln` in the services loop once skipped the
+# session reload, the snapshot and the release stamp, in silence. Anything
+# that leaves by an unplanned route now says so.
+trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$REPORTED" -eq 0 ]; then
+        printf "\n\033[1;31m::\033[0m %s stopped early (status %s).\n" "$SELF" "$rc" >&2
+        printf "   The system may be partly updated. Running it again is safe\n" >&2
+        printf "   and will finish the job; undo with: sudo %s --rollback\n" "$SELF" >&2
+      fi' EXIT
 msg()  { printf '\n\033[1;36m::\033[0m %s\n' "$*"; }
 note() { printf '   %s\n' "$*"; }
 
@@ -290,7 +302,12 @@ if [ -f "$SRC/packages/services.list" ]; then
         [ -e "$ROOT/var/service/$svc" ] && continue
         [ -d "$ROOT/etc/sv/$svc" ] || continue
         msg "enabling service: $svc"
-        ln -sf "/etc/sv/$svc" "$ROOT/var/service/$svc"
+        # Not fatal. /var/service is a symlink into the runit directory and
+        # it can be dangling -- and killing the whole update over one
+        # service would leave the snapshot unwritten, which quietly makes
+        # every file applied this run look like a local edit on the next.
+        ln -sf "/etc/sv/$svc" "$ROOT/var/service/$svc" ||
+            note "could not enable $svc; do it by hand once /var/service exists"
     done
 fi
 

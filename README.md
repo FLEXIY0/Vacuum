@@ -178,6 +178,20 @@ user who already exists. `vacuum-update` walks every home that looks like a
 Vacuum session — one with `.config/openbox/rc.xml` — and applies the same
 three-way rule there, preserving ownership.
 
+### It applies itself to the running session
+
+Openbox reads `rc.xml` and `menu.xml` once, at startup; tint2 and conky read
+their configs the same way. So an update used to land on disk and change
+nothing until the next login — which is indistinguishable from an update
+that failed. `vacuum-update` now signals the running session (`SIGUSR2` to
+Openbox, `SIGUSR1` to tint2 and conky), so keys, menu and panel are live as
+soon as the run finishes. Autostart changes and newly installed packages
+still need a new session.
+
+One wrinkle worth knowing: the *installed* copy of `vacuum-update` performs
+the run and only then replaces itself, so a change to the updater's own
+behaviour takes effect one update later.
+
 ### It also catches up on packages and services
 
 A new feature can need a package the installed system never had.
