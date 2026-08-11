@@ -1,0 +1,89 @@
+#!/bin/sh
+# Vacuum — one-line system readings, for the conky HUD.
+#
+#   vacuum-stat net      down/up rate on the interface holding the route
+#   vacuum-stat link     interface name and address
+#   vacuum-stat zram     compressed swap: stored, and what it costs
+#
+# conky can report network rates itself, but only for an interface named
+# up front -- and the name differs between machines (wlan0, wlp2s0, enp1s0)
+# and changes when you switch between wired and wireless. These read the
+# default route instead, so the HUD keeps working on any machine.
+
+set -eu
+
+CACHE=/tmp/.vacuum-stat.$(id -u)
+
+iface() {
+    # The interface holding the default route, read from the kernel rather
+    # than from `ip`: no process to spawn, and nothing to install. This runs
+    # every few seconds from the HUD, so it is worth keeping cheap.
+    [ -r /proc/net/route ] || return 0
+    awk 'NR > 1 && $2 == "00000000" { print $1; exit }' /proc/net/route
+}
+
+human() {
+    awk -v b="$1" 'BEGIN {
+        if (b >= 1048576) printf "%.1fM", b / 1048576
+        else if (b >= 1024) printf "%.0fK", b / 1024
+        else printf "%dB", b
+    }'
+}
+
+case "${1:-net}" in
+net)
+    dev=$(iface)
+    [ -n "$dev" ] || { printf 'offline'; exit 0; }
+
+    rx=$(cat "/sys/class/net/$dev/statistics/rx_bytes" 2>/dev/null || echo 0)
+    tx=$(cat "/sys/class/net/$dev/statistics/tx_bytes" 2>/dev/null || echo 0)
+    now=$(date +%s)
+
+    # Rates need a previous sample; the first call after boot shows nothing
+    # rather than a nonsense number derived from the counters' totals.
+    if [ -r "$CACHE" ]; then
+        read -r p_dev p_rx p_tx p_now < "$CACHE" 2>/dev/null || true
+    fi
+    printf '%s %s %s %s\n' "$dev" "$rx" "$tx" "$now" > "$CACHE"
+
+    if [ "${p_dev:-}" = "$dev" ] && [ "${p_now:-0}" -lt "$now" ]; then
+        span=$((now - p_now))
+        printf 'v%s  ^%s' \
+            "$(human $(( (rx - p_rx) / span )))" \
+            "$(human $(( (tx - p_tx) / span )))"
+    else
+        printf 'v-  ^-'
+    fi
+    ;;
+
+link)
+    dev=$(iface)
+    [ -n "$dev" ] || { printf 'offline'; exit 0; }
+    if command -v ip >/dev/null 2>&1; then
+        addr=$(ip -4 addr show "$dev" 2>/dev/null |
+            awk '/inet /{ sub(/\/.*/, "", $2); print $2; exit }')
+    fi
+    printf '%s  %s' "$dev" "${addr:-no address}"
+    ;;
+
+zram)
+    total=0; used=0
+    for z in /sys/block/zram*/mm_stat; do
+        [ -r "$z" ] || continue
+        set -- $(cat "$z")
+        total=$((total + ${1:-0}))
+        used=$((used + ${2:-0}))
+    done
+    if [ "$total" -eq 0 ]; then
+        printf 'empty'
+    else
+        printf '%s -> %s  (%.1fx)' "$(human "$total")" "$(human "$used")" \
+            "$(awk -v t="$total" -v u="$used" 'BEGIN { print (u ? t / u : 0) }')"
+    fi
+    ;;
+
+*)
+    echo "usage: ${0##*/} [net|link|zram]" >&2
+    exit 1
+    ;;
+esac

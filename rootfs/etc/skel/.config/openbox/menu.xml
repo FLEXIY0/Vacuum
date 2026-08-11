@@ -33,6 +33,9 @@
       <item label="Update system…">
         <action name="Execute"><command>vacuum-term -e sh -c "sudo vacuum-update; read -r _"</command></action>
       </item>
+      <item label="Toggle HUD">
+        <action name="Execute"><command>vacuum-hud toggle</command></action>
+      </item>
       <item label="Wallpaper">
         <action name="Execute"><command>nitrogen</command></action>
       </item>

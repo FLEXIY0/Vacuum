@@ -26,7 +26,7 @@ OUT="${3:-/out/preview.png}"
 
 # Bump the suffix when the package list below changes, so existing
 # containers reinstall instead of silently missing a new tool.
-READY=/var/lib/vacuum-preview-ready.2
+READY=/var/lib/vacuum-preview-ready.3
 SIZE_STAMP=/var/lib/vacuum-preview-size
 DISP=:99
 export DISPLAY="$DISP" HOME=/root
@@ -42,7 +42,7 @@ if [ ! -f "$READY" ]; then
     xbps-install -Sy >/dev/null 2>&1
     xbps-install -y \
         xorg-server-xvfb xsetroot xprop xset xdpyinfo setxkbmap \
-        openbox tint2 dunst dmenu st feh nitrogen pcmanfm \
+        openbox tint2 dunst dmenu st feh nitrogen pcmanfm conky \
         dbus dbus-x11 libnotify xdotool ImageMagick procps-ng \
         dejavu-fonts-ttf font-misc-misc terminus-font \
         hicolor-icon-theme adwaita-icon-theme xdg-user-dirs bash \
@@ -87,7 +87,7 @@ if [ "$want_restart" -eq 1 ]; then
 fi
 
 # --- restart the session on the existing server -----------------------------
-for p in openbox tint2 dunst st dmenu pcmanfm dbus-daemon; do
+for p in openbox tint2 dunst st dmenu pcmanfm conky dbus-daemon; do
     pkill -x "$p" 2>/dev/null || true
 done
 # Blank the root window: the server persists between runs, so last run's
@@ -163,9 +163,15 @@ case "$SCENE" in
         wait_win st 1 || true
         sleep 0.8
         ;;
+    hud)
+        # conky needs a couple of update cycles before its readings settle.
+        term 'cat /usr/share/vacuum/logo.txt'
+        wait_win st 1 || true
+        sleep 4
+        ;;
     *)
         echo "unknown scene: $SCENE" >&2
-        echo "scenes: desktop menu dmenu files term clean" >&2
+        echo "scenes: desktop menu dmenu files term hud clean" >&2
         exit 1
         ;;
 esac

@@ -1,0 +1,122 @@
+#!/bin/sh
+# Vacuum — print the keyboard shortcuts that are actually configured.
+#
+#   vacuum-keys            the ones worth remembering
+#   vacuum-keys --all      every binding, media keys included
+#   vacuum-keys --pad N    pad the key column to N characters
+#
+# Read straight out of ~/.config/openbox/rc.xml rather than kept in a list
+# somewhere: a cheatsheet that can disagree with the running configuration
+# is worse than none, and this one cannot.
+
+set -eu
+
+RC="${VACUUM_RC:-$HOME/.config/openbox/rc.xml}"
+[ -f "$RC" ] || RC=/etc/skel/.config/openbox/rc.xml
+[ -f "$RC" ] || { echo "no rc.xml found" >&2; exit 1; }
+
+ALL=0
+PAD=14
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --all)  ALL=1; shift ;;
+        --pad)  PAD="${2:?--pad needs a number}"; shift 2 ;;
+        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)      echo "unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+awk -v all="$ALL" -v pad="$PAD" '
+    function pretty(k) {
+        gsub(/W-/, "Super+", k)
+        gsub(/A-/, "Alt+",   k)
+        gsub(/C-/, "Ctrl+",  k)
+        gsub(/S-/, "Shift+", k)
+        gsub(/Return/, "Enter", k)
+        gsub(/space/,  "Space", k)
+        return k
+    }
+
+    # Openbox action names read like code; these read like a menu.
+    function label(action, cmd, key) {
+        if (cmd != "") return cmd
+        if (action == "MoveResizeTo") {
+            if (key ~ /Left$/)  return "snap left"
+            if (key ~ /Right$/) return "snap right"
+            return "snap"
+        }
+        if (action == "Close")            return "close window"
+        if (action == "ToggleFullscreen") return "fullscreen"
+        if (action == "ToggleMaximize")   return "maximize"
+        if (action == "Maximize")         return "maximize"
+        if (action == "Unmaximize")       return "restore"
+        if (action == "Iconify")          return "minimise"
+        if (action == "NextWindow")       return "next window"
+        if (action == "PreviousWindow")   return "previous window"
+        if (action == "ShowMenu")         return "menu"
+        if (action == "Exit")             return "log out"
+        if (action == "MoveResizeTo")     return "snap"
+        if (action == "Reconfigure")      return "reload config"
+        return tolower(action)
+    }
+
+    /<keybind[ \t]+key=/ {
+        line = $0
+        sub(/.*key="/, "", line)
+        sub(/".*/, "", line)
+        key = line
+        action = ""; cmd = ""
+        next
+    }
+
+    /<action[ \t]+name=/ {
+        line = $0
+        sub(/.*name="/, "", line)
+        sub(/".*/, "", line)
+        # A snap binding is UnmaximizeFull followed by MoveResizeTo; the
+        # second one is the one that describes what the key does.
+        if (action == "" || line == "MoveResizeTo") action = line
+        next
+    }
+
+    /<command>/ {
+        if (cmd == "") {
+            line = $0
+            sub(/.*<command>/, "", line)
+            sub(/<\/command>.*/, "", line)
+            cmd = line
+        }
+        next
+    }
+
+    /<\/keybind>/ {
+        if (key == "") next
+
+        # Media keys are self-explanatory and would crowd out the rest.
+        if (!all && key ~ /^XF86/) { key = ""; next }
+
+        # The desktop keys are eight bindings that say two things. Collapse
+        # each family to one line, remembering the highest number seen.
+        if (action == "GoToDesktop") {
+            n = key; sub(/.*-/, "", n)
+            if (n + 0 > go_max) go_max = n + 0
+            key = ""; next
+        }
+        if (action == "SendToDesktop") {
+            n = key; sub(/.*-/, "", n)
+            if (n + 0 > send_max) send_max = n + 0
+            key = ""; next
+        }
+
+        k[++i] = pretty(key)
+        v[i]   = label(action, cmd, key)
+        key = ""
+    }
+
+    END {
+        fmt = "%-" pad "s %s\n"
+        for (j = 1; j <= i; j++) printf fmt, k[j], v[j]
+        if (go_max)   printf fmt, "Super+1.." go_max, "switch desktop"
+        if (send_max) printf fmt, "Super+Sh+1.." send_max, "move to desktop"
+    }
+' "$RC"

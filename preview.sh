@@ -13,6 +13,7 @@
 #   ./preview.sh files           pcmanfm, to check the GTK dark theme
 #   ./preview.sh term            one terminal, filling the screen
 #   ./preview.sh clean           wallpaper and panel only
+#   ./preview.sh hud             the side HUD with load and keybindings
 #
 #   ./preview.sh --size 1920x1080 menu
 #   ./preview.sh --out shot.png
@@ -57,13 +58,30 @@ mkdir -p "$OUTDIR"
 mkdir -p "$(dirname "$OUTNAME")"
 
 # --- the warm container -----------------------------------------------------
+PROXY="${HTTPS_PROXY:-${https_proxy:-}}"
+
+# A container outlives the shell that made it, and a proxy address can move
+# between sessions. Keeping a container that points at a proxy which is no
+# longer there produces "connection refused" from xbps and nothing else, so
+# check for it rather than leaving someone to debug it.
+stale_proxy() {
+    [ -n "$PROXY" ] || return 1
+    was=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" 2>/dev/null |
+        sed -n 's/^https_proxy=//p' | head -1)
+    [ -n "$was" ] && [ "$was" != "$PROXY" ]
+}
+
+if stale_proxy; then
+    msg "proxy moved since this container was made; recreating it"
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+fi
+
 if ! docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null | grep -q true; then
     docker rm -f "$NAME" >/dev/null 2>&1 || true
     msg "starting the preview container"
 
     ARGS=(-d --name "$NAME" -v "$REPO_ROOT:/vacuum:ro" -v "$OUTDIR:/out")
 
-    PROXY="${HTTPS_PROXY:-${https_proxy:-}}"
     if [ -n "$PROXY" ]; then
         ARGS+=(--network host -e https_proxy="$PROXY" -e http_proxy="$PROXY")
     fi

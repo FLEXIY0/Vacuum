@@ -29,6 +29,9 @@ if command -v pipewire >/dev/null 2>&1; then
     wireplumber &
 fi
 
+# The side HUD, unless it was switched off last session.
+command -v vacuum-hud >/dev/null 2>&1 && vacuum-hud restore &
+
 # XDG directories (~/Desktop, ~/Downloads, …) for pcmanfm.
 command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update &
 

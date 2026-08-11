@@ -24,6 +24,9 @@ st
 nitrogen
 feh
 pcmanfm
+# The side HUD: load, memory, network and the live keybinding cheatsheet.
+# ~2 MB on disk, ~10 MB resident, and Super+F1 turns it off.
+conky
 
 # --- session plumbing -----------------------------------------------------
 dbus

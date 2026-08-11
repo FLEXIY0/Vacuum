@@ -43,6 +43,7 @@ stays warm between runs, and writes a PNG:
 ./preview.sh files        # pcmanfm, to check the GTK dark theme
 ./preview.sh term         # one terminal
 ./preview.sh clean        # wallpaper and panel only
+./preview.sh hud          # the side HUD
 
 ./preview.sh --size 1920x1080 menu
 ./preview.sh --stop       # drop the warm container
@@ -211,6 +212,7 @@ machine that has just come up.
 | `Super`+`1`…`4` | Switch desktop |
 | `Super`+`Shift`+`1`…`4` | Send window to desktop |
 | `Alt`+`Tab` | Cycle windows |
+| `Super`+`F1` | Show or hide the side HUD |
 | `Super`+`Shift`+`e` | Log out |
 
 Right-click the desktop for the root menu. `Alt` + drag moves a window from
@@ -336,6 +338,9 @@ and it appears in the image; there is no other mechanism.
 | `vacuum-term` | st, with a font it can actually be given |
 | `vacuum-run` | dmenu, in the Vacuum palette |
 | `vacuum-ram` | the memory report above |
+| `vacuum-hud` | show or hide the side HUD |
+| `vacuum-keys` | the shortcut list, read from rc.xml |
+| `vacuum-stat` | net rate and zram ratio, for the HUD |
 | `vacuum-wifi` | scan for networks and join one |
 | `vacuum-update` | update an installed system from this repository |
 | `vacuum-install` | install to disk (wraps `void-installer`) |
@@ -345,6 +350,40 @@ The first two exist because Void builds `st` and `dmenu` from vanilla
 sources: neither reads a config file or the X resource database, so the
 only way to theme them is on the command line. The wrappers are that command
 line, and they read their defaults from `/etc/vacuum/`.
+
+## The side HUD
+
+![The Vacuum HUD](docs/hud.png)
+
+A conky panel down the right edge: CPU, load, memory, zram, disk, network
+and battery, the three largest processes by memory — and the keyboard
+shortcuts.
+
+```sh
+vacuum-hud            # toggle          (also Super+F1)
+vacuum-hud on|off
+vacuum-hud status
+```
+
+Whether it was on is remembered, so a session comes back the way you left
+it. It costs about 10 MB resident and 2 MB on disk; `Super+F1` is there
+because on a small screen it is sometimes in the way.
+
+**The shortcut list is generated, not written down.** `vacuum-keys` parses
+`~/.config/openbox/rc.xml`, so it shows the bindings that are actually
+loaded. A cheatsheet that can disagree with the running configuration is
+worse than none, and this one cannot — rebind a key and the HUD follows.
+
+```sh
+vacuum-keys           # the ones worth remembering
+vacuum-keys --all     # every binding, media keys included
+```
+
+`vacuum-stat` supplies the two readings conky cannot take itself: network
+rate, and zram's compression ratio. Network rate needs an interface name up
+front, and that name differs between machines and changes when you move
+between wired and wireless — so it reads the default route from
+`/proc/net/route` instead, with no process spawned and nothing to install.
 
 ## Wi-Fi
 
