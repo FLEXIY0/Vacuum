@@ -82,11 +82,34 @@ if [ "${1:-}" = "--probe" ]; then
     if led=$(find_led); then
         echo "Keyboard backlight: $led"
         echo "  current  $(get "$led")  of  $(get_max "$led")"
-        if [ -w "$led/brightness" ]; then
-            echo "  writable by you -- vacuum-kbd will work"
+
+        grp=$(stat -c %G "$led/brightness" 2>/dev/null || echo '?')
+        mode=$(stat -c %A "$led/brightness" 2>/dev/null || echo '?')
+        echo "  node     group '$grp', mode $mode"
+
+        case "$mode" in
+            *-w-*|*w*w*) ;;
+            *) echo "  the group cannot write: the udev rule has not been"
+               echo "  applied. sudo udevadm control --reload, then"
+               echo "  sudo udevadm trigger --subsystem-match=leds" ;;
+        esac
+
+        # `test -w` is useless here, because root passes it whatever the
+        # permissions are -- and a diagnostic is normally run with sudo.
+        # Reporting "writable by you" to root says nothing about the user
+        # the desktop session actually runs as, which is the one that has
+        # to press the key.
+        who="${SUDO_USER:-$(id -un)}"
+        if [ "$(id -u)" -eq 0 ] && [ -z "${SUDO_USER:-}" ]; then
+            echo "  you are root, which can write regardless of permissions."
+            echo "  That says nothing about the user your desktop runs as --"
+            echo "  check that one:   id -nG <user>    (needs '$grp')"
+        elif id -nG "$who" 2>/dev/null | tr ' ' '\n' | grep -qx "$grp"; then
+            echo "  $who is in '$grp' -- vacuum-kbd will work"
         else
-            echo "  NOT writable by you. Check: id -nG   (needs 'video')"
-            echo "  and that /etc/udev/rules.d/70-vacuum-leds.rules is installed."
+            echo "  $who is NOT in '$grp', so the key will do nothing:"
+            echo "      sudo usermod -a -G $grp $who"
+            echo "  then log out and back in."
         fi
     else
         cat <<'EOF'

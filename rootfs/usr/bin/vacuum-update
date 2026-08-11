@@ -308,6 +308,25 @@ if [ "$CHANGED" -eq 1 ] && [ -z "${ROOT:-}" ] &&
     udevadm trigger --subsystem-match=leds >/dev/null 2>&1 || true
 fi
 
+# --- the running session ----------------------------------------------------
+# Openbox reads rc.xml and menu.xml once, at startup; tint2 and conky read
+# their configs the same way. Without this an update lands on disk and
+# changes nothing at all until the next login -- which is indistinguishable
+# from an update that did not work, and is exactly how it gets reported.
+#
+# Measured, not assumed: with the config changed underneath it a running
+# Openbox kept firing the old binding, and picked up the new one only after
+# SIGUSR2. tint2 repainted with a changed colour only after SIGUSR1.
+if [ "$CHANGED" -eq 1 ] && [ -z "${ROOT:-}" ]; then
+    reloaded=""
+    pkill -USR2 -x openbox 2>/dev/null && reloaded="$reloaded openbox"
+    pkill -USR1 -x tint2   2>/dev/null && reloaded="$reloaded tint2"
+    pkill -USR1 -x conky   2>/dev/null && reloaded="$reloaded conky"
+    if [ -n "$reloaded" ]; then
+        msg "reloaded the running session:$reloaded"
+    fi
+fi
+
 # --- snapshot and stamp -----------------------------------------------------
 # The exact tree just applied becomes the baseline for the next run.
 rm -rf "$APPLIED"
@@ -326,5 +345,9 @@ msg "done: $n_install installed, $n_update updated, $n_yours of yours kept"
     note "your versions were left alone; the new ones are beside them as .new"
 if [ "$CHANGED" -eq 1 ]; then
     note "backup: ${BACKUP#"$ROOT"}   undo with: sudo $SELF --rollback"
-    note "log out and back in for session changes to take effect"
+    # Keybindings, menu and panel are live already (see above). What cannot
+    # be signalled into place is the autostart script and anything a new
+    # package needs at session start.
+    note "keys, menu and panel are live now; log out and back in for"
+    note "autostart changes and newly installed packages"
 fi
