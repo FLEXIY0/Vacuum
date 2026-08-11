@@ -133,6 +133,70 @@ Vacuum has no automatic partitioner. The installer offers `cfdisk`.
 
 ---
 
+## Updating an installed system
+
+You do not reinstall to pick up changes. `vacuum-update` pulls the current
+tree and applies it in place:
+
+```sh
+sudo vacuum-update             # fetch and apply
+     vacuum-update --check     # show what would change, write nothing
+sudo vacuum-update --rollback  # undo the last update
+sudo vacuum-update --ref v0.2  # a specific branch, tag or commit
+```
+
+Also in the root menu, under **System → Update system…**
+
+### It will not overwrite your edits
+
+Every file is decided from three versions of itself: `base`, what shipped in
+the version you are running; `new`, what ships now; and `live`, what is on
+your disk.
+
+| | |
+| --- | --- |
+| `live` missing | installed |
+| `live` = `new` | nothing to do |
+| `live` = `base` | you never touched it — replaced |
+| otherwise | **yours** — kept, and the new version lands beside it as `<file>.new` |
+
+That is what xbps does with a config file you have edited, applied to
+Vacuum's own files. `base` is a snapshot of the tree applied last time, kept
+under `/var/lib/vacuum/applied`, so it is exact rather than inferred from a
+version number. On the first run there is no snapshot, so the tag matching
+your installed version is fetched instead.
+
+Files that were replaced are backed up under `/var/lib/vacuum/backups/`, and
+`--rollback` restores the last one — including deleting files the update
+added, so a rollback does not leave half a version behind.
+
+### Your home directory is handled separately
+
+`/etc/skel` only seeds *new* accounts, so updating it changes nothing for a
+user who already exists. `vacuum-update` walks every home that looks like a
+Vacuum session — one with `.config/openbox/rc.xml` — and applies the same
+three-way rule there, preserving ownership.
+
+### It also catches up on packages and services
+
+A new feature can need a package the installed system never had.
+`vacuum-update` diffs `packages/desktop.pkgs` against what is installed and
+offers to fetch the difference, and enables any service in
+`packages/services.list` that is not running yet.
+
+### Following your own tree
+
+Point `/etc/vacuum/update.conf` at your fork and branch:
+
+```sh
+VACUUM_REPO="you/Vacuum"
+VACUUM_BRANCH="main"
+```
+
+Downloads go through `xbps-uhelper`, which exists on every Void system — a
+bare install has no curl, no wget and no git, and this has to work on a
+machine that has just come up.
+
 ## Keys
 
 | Key | Action |
@@ -273,6 +337,7 @@ and it appears in the image; there is no other mechanism.
 | `vacuum-run` | dmenu, in the Vacuum palette |
 | `vacuum-ram` | the memory report above |
 | `vacuum-wifi` | scan for networks and join one |
+| `vacuum-update` | update an installed system from this repository |
 | `vacuum-install` | install to disk (wraps `void-installer`) |
 | `vacuum-battery-warn` | tint2's low-battery hook, called by the panel |
 

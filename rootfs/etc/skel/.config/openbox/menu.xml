@@ -30,6 +30,9 @@
       <item label="Install Vacuum to disk">
         <action name="Execute"><command>vacuum-term -e sudo vacuum-install</command></action>
       </item>
+      <item label="Update system…">
+        <action name="Execute"><command>vacuum-term -e sh -c "sudo vacuum-update; read -r _"</command></action>
+      </item>
       <item label="Wallpaper">
         <action name="Execute"><command>nitrogen</command></action>
       </item>

@@ -1,0 +1,316 @@
+#!/bin/sh
+# Vacuum — update an installed system from the repository, in place.
+#
+#   vacuum-update            fetch and apply
+#   vacuum-update --check    show what would change, write nothing
+#   vacuum-update --rollback undo the last update
+#   vacuum-update --ref REF  a specific branch, tag or commit
+#
+# The one rule: never destroy a change you made by hand. Each file is
+# decided from three versions of itself.
+#
+#   base   what was shipped in the version you are running
+#   new    what is shipped now
+#   live   what is on your disk
+#
+# live still equal to base means you never touched it, so replacing it is
+# safe. live different from base means it is yours: the new version is
+# written beside it as <file>.new and you are told. This is how xbps treats
+# a configuration file you have edited, applied to Vacuum's own files.
+#
+# base is a snapshot of the tree applied last time, kept in
+# /var/lib/vacuum/applied. That is exact by construction -- no guessing at
+# what a version number contained. On the very first run there is no
+# snapshot, so the tag matching your installed version is fetched instead.
+#
+# Downloads use xbps-uhelper, which exists on every Void system: a bare
+# install has no curl, no wget and no git.
+
+set -eu
+
+SELF=${0##*/}
+ROOT="${VACUUM_ROOT:-/}"
+REF=""
+MODE=apply
+ASSUME_YES=0
+
+die()  { printf '\033[1;31m%s:\033[0m %s\n' "$SELF" "$*" >&2; exit 1; }
+msg()  { printf '\n\033[1;36m::\033[0m %s\n' "$*"; }
+note() { printf '   %s\n' "$*"; }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --check)    MODE=check; shift ;;
+        --rollback) MODE=rollback; shift ;;
+        --ref)      REF="${2:?--ref needs a branch, tag or commit}"; shift 2 ;;
+        --root)     ROOT="${2:?--root needs a directory}"; shift 2 ;;
+        -y|--yes)   ASSUME_YES=1; shift ;;
+        -h|--help)  sed -n '2,29p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)          die "unknown option: $1  (try --help)" ;;
+    esac
+done
+
+ROOT="${ROOT%/}"
+RELEASE="$ROOT/etc/vacuum-release"
+STATE="$ROOT/var/lib/vacuum"
+APPLIED="$STATE/applied"
+BACKUPS="$STATE/backups"
+
+[ -f "$RELEASE" ] || die "not a Vacuum system: $RELEASE is missing"
+[ "$MODE" = check ] || [ "$(id -u)" -eq 0 ] || die "must run as root (try: sudo $SELF)"
+
+# shellcheck disable=SC1090
+. "$RELEASE"
+# shellcheck disable=SC1091
+[ -f "$ROOT/etc/vacuum/update.conf" ] && . "$ROOT/etc/vacuum/update.conf"
+: "${VACUUM_REPO:=FLEXIY0/Vacuum}"
+: "${VACUUM_BRANCH:=main}"
+: "${REF:=$VACUUM_BRANCH}"
+
+# --- rollback ---------------------------------------------------------------
+if [ "$MODE" = rollback ]; then
+    last=$(ls -1d "$BACKUPS"/*/ 2>/dev/null | sort | tail -1 || true)
+    [ -n "$last" ] || die "no backups under $BACKUPS"
+    last="${last%/}"
+
+    msg "restoring $(basename "$last")"
+    if [ -d "$last/files" ]; then
+        (cd "$last/files" && find . -type f -print) | sed 's|^\./||' |
+        while read -r rel; do
+            mkdir -p "$(dirname "$ROOT/$rel")"
+            cp -a "$last/files/$rel" "$ROOT/$rel"
+            note "restored /$rel"
+        done
+    fi
+    # Files that did not exist before the update have to go again, or the
+    # rollback would leave half of the new version behind.
+    if [ -f "$last/added" ]; then
+        while read -r rel; do
+            [ -n "$rel" ] || continue
+            rm -f "$ROOT/$rel"
+            note "removed /$rel"
+        done < "$last/added"
+    fi
+    [ -f "$last/applied.tar.gz" ] && {
+        rm -rf "$APPLIED"; mkdir -p "$APPLIED"
+        tar xzf "$last/applied.tar.gz" -C "$APPLIED"
+    }
+    msg "rolled back"
+    exit 0
+fi
+
+# --- fetching ---------------------------------------------------------------
+download() {
+    url="$1"; out="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$out" "$url" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$out" "$url" 2>/dev/null
+    else
+        # libfetch has to be told where the CA bundle is.
+        ( cd "$(dirname "$out")" &&
+          SSL_CA_CERT_FILE="${SSL_CA_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}" \
+              xbps-uhelper fetch "$url" >/dev/null 2>&1 &&
+          mv "$(basename "$url")" "$(basename "$out")" )
+    fi
+}
+
+fetch_tree() {
+    ref="$1"; dir="$2"
+    tmp=$(mktemp -d); ok=1
+    for path in "refs/tags/$ref" "refs/heads/$ref" "$ref"; do
+        download "https://github.com/$VACUUM_REPO/archive/$path.tar.gz" "$tmp/t.tgz" || continue
+        [ -s "$tmp/t.tgz" ] || continue
+        mkdir -p "$dir"
+        if tar xzf "$tmp/t.tgz" -C "$dir" --strip-components=1 2>/dev/null; then
+            ok=0; break
+        fi
+    done
+    rm -rf "$tmp"
+    return $ok
+}
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT INT TERM
+
+msg "fetching $VACUUM_REPO at $REF"
+fetch_tree "$REF" "$WORK/new" || die "could not fetch $REF from $VACUUM_REPO"
+SRC="$WORK/new"
+NEW="$SRC/rootfs"
+[ -d "$NEW" ] || die "$REF has no rootfs/ -- wrong repository?"
+
+if [ -d "$APPLIED/rootfs" ]; then
+    BASE="$APPLIED/rootfs"
+    note "comparing against the tree applied last time"
+elif fetch_tree "v$VERSION" "$WORK/base" && [ -d "$WORK/base/rootfs" ]; then
+    BASE="$WORK/base/rootfs"
+    note "comparing against v$VERSION, the version you installed"
+else
+    BASE="$WORK/empty"; mkdir -p "$BASE"
+    note "no baseline available: every difference will be treated as yours"
+fi
+
+# --- plan -------------------------------------------------------------------
+# Built in full before anything is written, so --check and the final summary
+# describe the same thing, and so counting does not depend on subshells.
+PLAN="$WORK/plan"
+: > "$PLAN"
+
+same() { [ -f "$1" ] && [ -f "$2" ] && cmp -s "$1" "$2"; }
+
+plan_file() {
+    src="$1"; base="$2"; dest="$3"; owner="${4:-}"
+    if [ ! -e "$dest" ];        then action=install
+    elif same "$src" "$dest";   then action=keep
+    elif same "$base" "$dest";  then action=update
+    else                             action=yours
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$action" "$src" "$dest" "$owner" >> "$PLAN"
+}
+
+(cd "$NEW" && find . -type f -print) | sed 's|^\./||' | sort | while read -r rel; do
+    # This script stamps SOURCE_REF into vacuum-release, so syncing the file
+    # would see its own edit and report it as yours on every run afterwards.
+    [ "$rel" = "etc/vacuum-release" ] && continue
+    plan_file "$NEW/$rel" "$BASE/$rel" "$ROOT/$rel"
+done
+
+# A user's ~/.config was copied out of /etc/skel when the account was made,
+# so updating skel alone changes nothing for anyone already logged in.
+for h in "$ROOT/root" "$ROOT"/home/*; do
+    [ -d "$h" ] || continue
+    [ -f "$h/.config/openbox/rc.xml" ] || continue
+    owner=$(stat -c '%u:%g' "$h" 2>/dev/null || echo "")
+    (cd "$NEW/etc/skel" 2>/dev/null && find . -type f -print) | sed 's|^\./||' |
+    sort | while read -r rel; do
+        plan_file "$NEW/etc/skel/$rel" "$BASE/etc/skel/$rel" "$h/$rel" "$owner"
+    done
+done
+
+count() { grep -c "^$1	" "$PLAN" 2>/dev/null || true; }
+n_install=$(count install); n_update=$(count update)
+n_yours=$(count yours);     n_keep=$(count keep)
+
+show() {
+    grep "^$1	" "$PLAN" 2>/dev/null | cut -f3 | sed "s|^$ROOT||" | while read -r p; do
+        note "$2 $p"
+    done
+}
+
+[ "$n_install" -gt 0 ] && { msg "new files"; show install "+"; }
+[ "$n_update"  -gt 0 ] && { msg "updated";   show update  "~"; }
+[ "$n_yours"   -gt 0 ] && { msg "yours, kept as is"; show yours "!"; }
+
+if [ "$MODE" = check ]; then
+    msg "check only, nothing written"
+    note "$n_install to install, $n_update to update, $n_yours of yours kept, $n_keep already current"
+    exit 0
+fi
+
+if [ "$n_install" -eq 0 ] && [ "$n_update" -eq 0 ] && [ "$n_yours" -eq 0 ]; then
+    msg "already up to date"
+    exit 0
+fi
+
+# --- apply ------------------------------------------------------------------
+TS=$(date -u +%Y%m%d-%H%M%S)
+BACKUP="$BACKUPS/$TS"
+CHANGED=0
+
+# Created on first real change only. A run that just re-reports your local
+# edits leaves no backup, so --rollback always finds a meaningful one.
+open_backup() {
+    [ "$CHANGED" -eq 1 ] && return 0
+    mkdir -p "$BACKUP/files"
+    : > "$BACKUP/added"
+    CHANGED=1
+}
+
+while IFS="$(printf '\t')" read -r action src dest owner; do
+    case "$action" in
+        keep) ;;
+        install)
+            open_backup
+            printf '%s\n' "${dest#"$ROOT"/}" >> "$BACKUP/added"
+            mkdir -p "$(dirname "$dest")"
+            cp -a "$src" "$dest"
+            [ -n "$owner" ] && chown "$owner" "$dest"
+            ;;
+        update)
+            open_backup
+            rel="${dest#"$ROOT"/}"
+            mkdir -p "$BACKUP/files/$(dirname "$rel")"
+            cp -a "$dest" "$BACKUP/files/$rel"
+            cp -a "$src" "$dest"
+            [ -n "$owner" ] && chown "$owner" "$dest"
+            ;;
+        yours)
+            # Refresh only when it would change: otherwise every run
+            # rewrites a file the user is meant to be comparing against.
+            if ! cmp -s "$src" "$dest.new" 2>/dev/null; then
+                cp -a "$src" "$dest.new"
+                [ -n "$owner" ] && chown "$owner" "$dest.new"
+            fi
+            ;;
+    esac
+done < "$PLAN"
+
+if [ "$CHANGED" -eq 1 ]; then
+    [ -d "$APPLIED" ] && tar czf "$BACKUP/applied.tar.gz" -C "$APPLIED" . 2>/dev/null || true
+    cp -a "$RELEASE" "$BACKUP/vacuum-release" 2>/dev/null || true
+fi
+
+# --- packages ---------------------------------------------------------------
+# A new feature can need a package the installed system never had.
+if [ -f "$SRC/packages/desktop.pkgs" ] && command -v xbps-query >/dev/null 2>&1; then
+    missing=""
+    for pkg in $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$SRC/packages/desktop.pkgs"); do
+        xbps-query -r "${ROOT:-/}" "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
+    done
+    if [ -n "$missing" ]; then
+        msg "packages this version wants but you do not have:$missing"
+        if [ "$ASSUME_YES" -eq 1 ]; then
+            reply=y
+        else
+            printf '   install them now? [Y/n] '
+            read -r reply || reply=n
+        fi
+        case "$reply" in
+            [Nn]*) note "skipped -- run later: sudo xbps-install -S$missing" ;;
+            # shellcheck disable=SC2086
+            *)     xbps-install -r "${ROOT:-/}" -Sy $missing ||
+                       note "package install failed" ;;
+        esac
+    fi
+fi
+
+# --- services ---------------------------------------------------------------
+if [ -f "$SRC/packages/services.list" ]; then
+    for svc in $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$SRC/packages/services.list"); do
+        [ -e "$ROOT/var/service/$svc" ] && continue
+        [ -d "$ROOT/etc/sv/$svc" ] || continue
+        msg "enabling service: $svc"
+        ln -sf "/etc/sv/$svc" "$ROOT/var/service/$svc"
+    done
+fi
+
+# --- snapshot and stamp -----------------------------------------------------
+# The exact tree just applied becomes the baseline for the next run.
+rm -rf "$APPLIED"
+mkdir -p "$APPLIED"
+cp -a "$NEW" "$APPLIED/rootfs"
+[ -d "$SRC/packages" ] && cp -a "$SRC/packages" "$APPLIED/packages"
+
+if grep -q '^SOURCE_REF=' "$RELEASE" 2>/dev/null; then
+    sed -i "s|^SOURCE_REF=.*|SOURCE_REF=\"$REF\"|" "$RELEASE"
+else
+    printf 'SOURCE_REF="%s"\n' "$REF" >> "$RELEASE"
+fi
+
+msg "done: $n_install installed, $n_update updated, $n_yours of yours kept"
+[ "$n_yours" -gt 0 ] &&
+    note "your versions were left alone; the new ones are beside them as .new"
+if [ "$CHANGED" -eq 1 ]; then
+    note "backup: ${BACKUP#"$ROOT"}   undo with: sudo $SELF --rollback"
+    note "log out and back in for session changes to take effect"
+fi
