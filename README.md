@@ -26,6 +26,42 @@ host, not to Vacuum — the figure to read is the desktop total.*
 
 ---
 
+## See a change without building anything
+
+Most of what Vacuum is — the theme, the panel, notifications, keybindings,
+the `vacuum-*` tools — lives under `rootfs/`, which `mklive` copies in at
+the very end of a build. Rebuilding a 1.5 GB ISO to look at a colour is
+half an hour spent on steps that have nothing to do with the change.
+
+`./preview.sh` renders the working tree under Xvfb in a container that
+stays warm between runs, and writes a PNG:
+
+```sh
+./preview.sh              # desktop: two terminals and a notification
+./preview.sh menu         # the root menu, opened with a real Super+space
+./preview.sh dmenu        # the launcher
+./preview.sh files        # pcmanfm, to check the GTK dark theme
+./preview.sh term         # one terminal
+./preview.sh clean        # wallpaper and panel only
+
+./preview.sh --size 1920x1080 menu
+./preview.sh --stop       # drop the warm container
+```
+
+First call takes about a minute and a half to install the environment.
+Every call after that is **1–3 seconds**. Renders land in `preview/`.
+
+Configs are copied in fresh on every run and the session is restarted, so a
+screenshot always shows the current working tree. The X server is the one
+thing kept alive between runs — nothing Vacuum owns lives in it.
+
+It also reports parse errors from Openbox and the autostart script: a
+screenshot that looks right can still be hiding a config that failed to load
+and silently fell back to a default.
+
+What it does not cover: Xorg on real hardware, runit services, and anything
+that happens before the session starts. Those still need an ISO.
+
 ## Build it
 
 The build must run on Void, because it uses `xbps` to populate a chroot. On
@@ -207,9 +243,11 @@ pages lazily, so an untouched device is nearly free. Tune it in
 
 ```
 build.sh                  host entry point: wraps the build in a container
+preview.sh                screenshot the desktop in seconds, no ISO needed
 mk/
   build-in-container.sh   the actual build; POSIX sh, runs on Void
   postsetup.sh            runs against the finished rootfs before initramfs
+  preview-session.sh      the render, inside the preview container
   patches/                applied to the pinned void-mklive checkout
   gen-wallpaper.py        regenerates the wallpaper, no dependencies
   palette.sh              the palette, in one place

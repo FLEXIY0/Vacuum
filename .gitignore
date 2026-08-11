@@ -7,3 +7,7 @@
 # Scratch space used by mk/build-in-container.sh when run natively.
 /build/
 /xbps-cachedir-*/
+
+# Preview renders from ./preview.sh — regenerate them, don't commit them.
+# (docs/preview.png is committed on purpose, as the README's screenshot.)
+/preview/
