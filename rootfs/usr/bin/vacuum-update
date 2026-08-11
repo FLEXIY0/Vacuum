@@ -346,10 +346,23 @@ fi
 
 # --- snapshot and stamp -----------------------------------------------------
 # The exact tree just applied becomes the baseline for the next run.
-rm -rf "$APPLIED"
-mkdir -p "$APPLIED"
-cp -a "$NEW" "$APPLIED/rootfs"
-[ -d "$SRC/packages" ] && cp -a "$SRC/packages" "$APPLIED/packages"
+#
+# By the time we get here the files are already on disk, so failing to
+# record the baseline is a nuisance, not a disaster -- and it must not take
+# the whole run down with it, which is what happened when a full filesystem
+# made `mkdir` fail here. Say what went wrong, say what it costs, carry on.
+if ! { rm -rf "$APPLIED" &&
+       mkdir -p "$APPLIED" &&
+       cp -a "$NEW" "$APPLIED/rootfs"; } 2>/dev/null; then
+    msg "could not record the baseline snapshot in $APPLIED"
+    note "the update itself is applied -- this only affects the next run,"
+    note "which will compare against the released tree instead."
+    space=$(df -h "$STATE" 2>/dev/null | awk 'NR == 2 { print $4 " free on " $6 }')
+    [ -n "${space:-}" ] && note "disk: $space"
+    rm -rf "$APPLIED" 2>/dev/null || true
+elif [ -d "$SRC/packages" ]; then
+    cp -a "$SRC/packages" "$APPLIED/packages"
+fi
 
 if grep -q '^SOURCE_REF=' "$RELEASE" 2>/dev/null; then
     sed -i "s|^SOURCE_REF=.*|SOURCE_REF=\"$REF\"|" "$RELEASE"

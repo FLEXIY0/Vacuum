@@ -233,8 +233,17 @@ if command -v amixer >/dev/null 2>&1; then
     amixer scontrols 2>/dev/null |
         sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" |
         while read -r c; do
-            state=$(amixer sget "$c" 2>/dev/null |
-                grep -o '\[[0-9]*%\]\|\[off\]\|\[on\]' | tr '\n' ' ')
+            out=$(amixer sget "$c" 2>/dev/null) || out=""
+            state=$(printf '%s\n' "$out" |
+                grep -o '\[[0-9]*%\]\|\[off\]\|\[on\]' | tr '\n' ' ') || state=""
+            # Enumerated controls carry no percentage. Auto-Mute Mode is one
+            # of them and is worth seeing: set to Enabled on a laptop whose
+            # jack detection is stuck, it mutes the speakers for good while
+            # every other control still reads as healthy.
+            if [ -z "$state" ]; then
+                state=$(printf '%s\n' "$out" |
+                    sed -n "s/.*Item0: '\(.*\)'.*/[\1]/p" | head -1) || state=""
+            fi
             printf '        %-22s %s\n' "$c" "${state:-(no playback volume)}"
         done
 
@@ -329,14 +338,42 @@ if [ "$MODE" = fix ]; then
         # which is what turns the outputs on in the first place.
         alsactl init 2>/dev/null || true
 
-        # The init profiles cover the standard controls; these are the ones
-        # that are commonly separate on laptop codecs and stay off.
-        for c in Master PCM Speaker Headphone Front "Front Speaker" Desktop; do
-            amixer -q sset "$c" unmute  >/dev/null 2>&1 || true
-        done
-        for c in Master PCM Speaker Headphone Front; do
-            amixer -q sset "$c" 70%     >/dev/null 2>&1 || true
-        done
+        # Every playback control, not a list of names. Which controls a card
+        # has is decided by its codec, and a laptop whose output sits on a
+        # control nobody thought to name here stays silent no matter how
+        # many times this is run.
+        #
+        # Capture-side controls are skipped on purpose: unmuting a Mic or
+        # Line playback path routes the microphone into the speakers, and on
+        # a laptop that means feedback the moment it works.
+        echo "  unmuting every playback control"
+        amixer scontrols 2>/dev/null |
+            sed -n "s/^Simple mixer control '\([^']*\)'.*/\1/p" |
+            while read -r c; do
+                case "$c" in
+                    *Mic*|*Capture*|*Beep*|*Line*|*Loopback*|*Input*) continue ;;
+                esac
+                caps=$(amixer sget "$c" 2>/dev/null |
+                    sed -n 's/.*Capabilities: //p') || caps=""
+                case "$caps" in
+                    *pswitch*) amixer -q sset "$c" unmute >/dev/null 2>&1 || true ;;
+                esac
+                case "$caps" in
+                    *pvolume*) amixer -q sset "$c" 75% >/dev/null 2>&1 || true ;;
+                esac
+            done
+
+        # "Auto-Mute Mode" silences the speakers whenever the codec believes
+        # something is plugged into the headphone jack. On older laptops that
+        # detection is frequently wrong or stuck, and the speakers then stay
+        # muted permanently with every volume control looking perfectly
+        # healthy. Turning it off is the standard remedy, and it costs
+        # nothing but having to mute manually when headphones go in.
+        if amixer sget "Auto-Mute Mode" >/dev/null 2>&1; then
+            echo "  disabling Auto-Mute Mode (stuck jack detection mutes speakers)"
+            amixer -q sset "Auto-Mute Mode" Disabled >/dev/null 2>&1 ||
+                amixer -q sset "Auto-Mute Mode" Off >/dev/null 2>&1 || true
+        fi
         echo "  saving mixer state"
         mkdir -p /var/lib/alsa
         alsactl store 2>/dev/null || true
