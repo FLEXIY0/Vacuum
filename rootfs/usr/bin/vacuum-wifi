@@ -1,0 +1,270 @@
+#!/bin/sh
+# Vacuum — find and join a wireless network.
+#
+#   vacuum-wifi              scan, pick a network, connect
+#   vacuum-wifi --status     what is connected, and on which address
+#   vacuum-wifi --list       scan and print, without connecting
+#   vacuum-wifi --forget     drop a saved network
+#
+# This drives the wpa_supplicant that runit already has running -- it adds
+# no daemon and no package. Void's stock wpa_supplicant.conf sets
+# ctrl_interface_group=wheel and update_config=1, which is what lets this
+# scan and save networks as an ordinary user in the wheel group, with no
+# sudo anywhere in the flow.
+#
+# Passphrases are converted to a PSK hash with wpa_passphrase before being
+# saved, so the plaintext never reaches wpa_supplicant.conf.
+
+set -eu
+
+SELF=${0##*/}
+IFACE="${VACUUM_WIFI_IFACE:-}"
+
+die() { printf '\033[1;31m%s:\033[0m %s\n' "$SELF" "$*" >&2; exit 1; }
+msg() { printf '\033[1;36m%s\033[0m %s\n' "::" "$*"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- interface --------------------------------------------------------------
+find_iface() {
+    [ -n "$IFACE" ] && { echo "$IFACE"; return; }
+
+    # wpa_supplicant opens one control socket per interface it manages;
+    # that list is more trustworthy than guessing a name like wlan0.
+    for sock in /run/wpa_supplicant/*; do
+        [ -S "$sock" ] || continue
+        basename "$sock"
+        return
+    done
+
+    have iw && iw dev 2>/dev/null | awk '/Interface/ { print $2; exit }'
+}
+
+IFACE="$(find_iface)"
+[ -n "$IFACE" ] || die "no wireless interface found.
+Is wpa_supplicant running?  sudo sv status wpa_supplicant
+If the service is down:      sudo sv up wpa_supplicant"
+
+wpa() { wpa_cli -i "$IFACE" "$@" 2>/dev/null; }
+
+wpa ping 2>/dev/null | grep -q PONG || die "cannot talk to wpa_supplicant on $IFACE.
+Check that the service is up:  sudo sv status wpa_supplicant
+and that you are in the wheel group:  id -nG"
+
+# --- scanning ---------------------------------------------------------------
+# One line per network: SSID <tab> signal <tab> security
+scan() {
+    wpa scan >/dev/null 2>&1 || true
+
+    # Results trickle in; poll rather than sleeping a flat few seconds.
+    i=0
+    while [ "$i" -lt 20 ]; do
+        sleep 0.5
+        out=$(wpa scan_results)
+        [ "$(printf '%s\n' "$out" | wc -l)" -gt 1 ] && break
+        i=$((i + 1))
+    done
+
+    # scan_results columns: bssid / frequency / signal / flags / ssid.
+    # The SSID is last and may contain spaces, so cut from field 5 on.
+    printf '%s\n' "$out" | awk -F'\t' '
+        NR == 1 { next }
+        {
+            ssid = $5
+            for (i = 6; i <= NF; i++) ssid = ssid "\t" $i
+            if (ssid == "") next            # hidden network
+
+            sec = "open"
+            if ($4 ~ /WPA2|RSN/) sec = "WPA2"
+            else if ($4 ~ /WPA/)  sec = "WPA"
+            else if ($4 ~ /WEP/)  sec = "WEP"
+
+            # Keep the strongest sighting of each SSID.
+            if (!(ssid in best) || $3 + 0 > best[ssid]) {
+                best[ssid] = $3 + 0
+                security[ssid] = sec
+            }
+        }
+        END { for (s in best) printf "%s\t%d\t%s\n", s, best[s], security[s] }
+    ' | sort -t"$(printf '\t')" -k2,2nr
+}
+
+# dBm to something a person can read at a glance.
+bars() {
+    if   [ "$1" -ge -50 ]; then echo "••••"
+    elif [ "$1" -ge -60 ]; then echo "•••·"
+    elif [ "$1" -ge -70 ]; then echo "••··"
+    else                        echo "•···"
+    fi
+}
+
+# --- actions ----------------------------------------------------------------
+do_status() {
+    st=$(wpa status)
+    state=$(printf '%s\n' "$st" | sed -n 's/^wpa_state=//p')
+    ssid=$(printf '%s\n' "$st" | sed -n 's/^ssid=//p')
+    addr=$(printf '%s\n' "$st" | sed -n 's/^ip_address=//p')
+
+    printf '\n  interface  %s\n' "$IFACE"
+    printf '  state      %s\n' "${state:-unknown}"
+    [ -n "$ssid" ] && printf '  network    %s\n' "$ssid"
+    if [ -n "$addr" ]; then
+        printf '  address    %s\n\n' "$addr"
+    else
+        printf '  address    (none yet -- dhcpcd may still be working)\n\n'
+    fi
+}
+
+do_list() {
+    msg "scanning on $IFACE ..."
+    found=$(scan)
+    [ -n "$found" ] || die "no networks found"
+    printf '\n'
+    printf '%s\n' "$found" | while IFS="$(printf '\t')" read -r ssid sig sec; do
+        printf '  %s  %-6s  %s\n' "$(bars "$sig")" "$sec" "$ssid"
+    done
+    printf '\n'
+}
+
+do_forget() {
+    saved=$(wpa list_networks | awk -F'\t' 'NR>1 { printf "%s\t%s\n", $1, $2 }')
+    [ -n "$saved" ] || die "no saved networks"
+
+    printf '\n  saved networks:\n\n'
+    printf '%s\n' "$saved" | while IFS="$(printf '\t')" read -r id ssid; do
+        printf '  %3s  %s\n' "$id" "$ssid"
+    done
+    printf '\n  id to forget (empty to cancel): '
+    read -r id
+    [ -n "$id" ] || exit 0
+
+    wpa remove_network "$id" | grep -q OK || die "could not remove network $id"
+    wpa save_config >/dev/null
+    msg "removed"
+}
+
+do_connect() {
+    msg "scanning on $IFACE ..."
+    found=$(scan)
+    [ -n "$found" ] || die "no networks found"
+
+    # Numbered list, then a number. Works the same over SSH, on a bare tty
+    # and in a terminal window, which a graphical picker would not.
+    printf '\n'
+    n=0
+    printf '%s\n' "$found" > /tmp/.vacuum-wifi.$$
+    trap 'rm -f /tmp/.vacuum-wifi.$$' EXIT INT TERM
+    while IFS="$(printf '\t')" read -r ssid sig sec; do
+        n=$((n + 1))
+        printf '  %2d)  %s  %-6s  %s\n' "$n" "$(bars "$sig")" "$sec" "$ssid"
+    done < /tmp/.vacuum-wifi.$$
+
+    printf '\n  network number (empty to cancel): '
+    read -r choice
+    [ -n "$choice" ] || exit 0
+    case "$choice" in
+        *[!0-9]*) die "not a number: $choice" ;;
+    esac
+    [ "$choice" -ge 1 ] && [ "$choice" -le "$n" ] || die "no network number $choice"
+
+    line=$(sed -n "${choice}p" /tmp/.vacuum-wifi.$$)
+    ssid=$(printf '%s' "$line" | cut -f1)
+    sec=$(printf '%s' "$line" | cut -f3)
+
+    # Already saved? Reuse it rather than stacking duplicate entries.
+    existing=$(wpa list_networks | awk -F'\t' -v s="$ssid" 'NR>1 && $2 == s { print $1; exit }')
+    if [ -n "$existing" ]; then
+        msg "already saved, reconnecting to \"$ssid\""
+        wpa select_network "$existing" >/dev/null
+        finish "$ssid"
+        return
+    fi
+
+    id=$(wpa add_network)
+    case "$id" in
+        *[!0-9]*) die "wpa_supplicant refused to add a network" ;;
+    esac
+
+    wpa set_network "$id" ssid "\"$ssid\"" | grep -q OK ||
+        die "could not set the network name"
+
+    if [ "$sec" = open ]; then
+        wpa set_network "$id" key_mgmt NONE | grep -q OK ||
+            die "could not configure the open network"
+    else
+        printf '  passphrase for "%s": ' "$ssid"
+        stty -echo 2>/dev/null || true
+        read -r pass
+        stty echo 2>/dev/null || true
+        printf '\n'
+
+        [ -n "$pass" ] || { wpa remove_network "$id" >/dev/null; die "no passphrase given"; }
+
+        # Hash it rather than storing the passphrase in the clear. Anything
+        # outside 8-63 characters is not a valid WPA passphrase, and
+        # wpa_passphrase would fail confusingly.
+        len=${#pass}
+        if [ "$len" -lt 8 ] || [ "$len" -gt 63 ]; then
+            wpa remove_network "$id" >/dev/null
+            die "a WPA passphrase must be 8 to 63 characters (got $len)"
+        fi
+
+        psk=$(wpa_passphrase "$ssid" "$pass" | sed -n 's/^[[:space:]]*psk=//p' | head -1)
+        [ -n "$psk" ] || { wpa remove_network "$id" >/dev/null; die "could not derive the key"; }
+
+        wpa set_network "$id" psk "$psk" | grep -q OK ||
+            { wpa remove_network "$id" >/dev/null; die "could not set the key"; }
+    fi
+
+    wpa enable_network "$id" >/dev/null
+    wpa select_network "$id" >/dev/null
+    finish "$ssid"
+}
+
+finish() {
+    ssid="$1"
+    msg "connecting to \"$ssid\" ..."
+
+    i=0
+    while [ "$i" -lt 30 ]; do
+        state=$(wpa status | sed -n 's/^wpa_state=//p')
+        [ "$state" = COMPLETED ] && break
+        sleep 1
+        i=$((i + 1))
+    done
+
+    if [ "${state:-}" != COMPLETED ]; then
+        wpa save_config >/dev/null 2>&1 || true
+        die "could not associate with \"$ssid\" -- wrong passphrase, or out of range.
+Saved anyway; run \"$SELF --forget\" to drop it."
+    fi
+
+    # Persist only once the network is known to work.
+    wpa save_config >/dev/null 2>&1 ||
+        msg "connected, but could not save (is update_config=1 set?)"
+
+    # dhcpcd is already running as a service and will pick the link up.
+    i=0
+    while [ "$i" -lt 15 ]; do
+        addr=$(wpa status | sed -n 's/^ip_address=//p')
+        [ -n "$addr" ] && break
+        sleep 1
+        i=$((i + 1))
+    done
+
+    if [ -n "${addr:-}" ]; then
+        msg "connected: $addr"
+    else
+        msg "associated, but no address yet. If it does not appear:"
+        printf '     sudo sv restart dhcpcd\n'
+    fi
+}
+
+case "${1:-}" in
+    ''|--connect) do_connect ;;
+    --status)     do_status ;;
+    --list)       do_list ;;
+    --forget)     do_forget ;;
+    -h|--help)    sed -n '2,10p' "$0" | sed 's/^# \?//' ;;
+    *)            die "unknown option: $1  (try --help)" ;;
+esac

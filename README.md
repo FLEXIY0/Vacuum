@@ -272,6 +272,7 @@ and it appears in the image; there is no other mechanism.
 | `vacuum-term` | st, with a font it can actually be given |
 | `vacuum-run` | dmenu, in the Vacuum palette |
 | `vacuum-ram` | the memory report above |
+| `vacuum-wifi` | scan for networks and join one |
 | `vacuum-install` | install to disk (wraps `void-installer`) |
 | `vacuum-battery-warn` | tint2's low-battery hook, called by the panel |
 
@@ -279,6 +280,34 @@ The first two exist because Void builds `st` and `dmenu` from vanilla
 sources: neither reads a config file or the X resource database, so the
 only way to theme them is on the command line. The wrappers are that command
 line, and they read their defaults from `/etc/vacuum/`.
+
+## Wi-Fi
+
+```sh
+vacuum-wifi              # scan, pick a network from a numbered list, connect
+vacuum-wifi --status     # what is connected, and on which address
+vacuum-wifi --list       # scan and print, without connecting
+vacuum-wifi --forget     # drop a saved network
+```
+
+Also in the root menu, under **Wi-Fi…**
+
+It drives the `wpa_supplicant` that runit is already running, so it adds no
+daemon and no package — the alternative, NetworkManager with a tray applet,
+would cost about 25 MB resident for the same result. Void's stock
+`wpa_supplicant.conf` sets `ctrl_interface_group=wheel` and
+`update_config=1`, which is what lets scanning and saving work as an
+ordinary user with no `sudo` anywhere in the flow.
+
+Passphrases are run through `wpa_passphrase` before being saved, so the PSK
+hash is what lands in `wpa_supplicant.conf` and the plaintext never does.
+Networks are only written to disk once the association actually succeeds,
+so a typo does not leave a broken entry behind.
+
+The picker is a numbered list rather than a graphical menu on purpose: the
+same command then works on a bare tty, over SSH, and in a terminal window —
+including the case that matters most, a fresh install with no working
+network and no desktop yet.
 
 ## Palette
 

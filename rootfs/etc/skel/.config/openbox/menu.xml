@@ -14,9 +14,18 @@
 
     <separator/>
 
+    <item label="Wi-Fi…">
+      <action name="Execute"><command>vacuum-term -e vacuum-wifi</command></action>
+    </item>
+
+    <separator/>
+
     <menu id="system-menu" label="System">
       <item label="Memory report">
         <action name="Execute"><command>vacuum-term -e vacuum-ram --wait</command></action>
+      </item>
+      <item label="Network status">
+        <action name="Execute"><command>vacuum-term -e sh -c "vacuum-wifi --status; read -r _"</command></action>
       </item>
       <item label="Install Vacuum to disk">
         <action name="Execute"><command>vacuum-term -e sudo vacuum-install</command></action>
