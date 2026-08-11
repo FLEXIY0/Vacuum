@@ -54,7 +54,9 @@ fi
 
 # --- permissions -----------------------------------------------------------
 msg "fixing modes on shipped files"
-for f in vacuum-term vacuum-run vacuum-ram vacuum-install vacuum-battery-warn vacuum-wifi vacuum-update vacuum-hud vacuum-keys vacuum-stat; do
+for f in vacuum-term vacuum-run vacuum-ram vacuum-install vacuum-battery-warn \
+         vacuum-wifi vacuum-update vacuum-hud vacuum-keys vacuum-stat \
+         vacuum-vol vacuum-sound vacuum-kbd; do
     [ -f "$ROOTFS/usr/bin/$f" ] && chmod 755 "$ROOTFS/usr/bin/$f"
 done
 chmod 755 "$ROOTFS/etc/skel/.xinitrc" "$ROOTFS/etc/skel/.config/openbox/autostart"

@@ -43,6 +43,13 @@ adwaita-icon-theme
 pipewire
 wireplumber
 alsa-pipewire
+# alsa-utils is not optional, even with PipeWire on top. The kernel brings
+# an HDA codec up muted, and the thing that unmutes it is `alsactl init`,
+# which lives here -- as does the runit service that restores the mixer at
+# boot and saves it at shutdown. Without this package a fresh install is
+# silent no matter how healthy PipeWire looks. It also supplies alsamixer,
+# which is the only way to reach controls PipeWire does not expose.
+alsa-utils
 
 # --- memory + power -------------------------------------------------------
 zramen

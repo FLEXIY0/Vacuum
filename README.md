@@ -213,7 +213,12 @@ machine that has just come up.
 | `Super`+`Shift`+`1`…`4` | Send window to desktop |
 | `Alt`+`Tab` | Cycle windows |
 | `Super`+`F1` | Show or hide the side HUD |
+| `Super`+`k` | Keyboard backlight on or off |
 | `Super`+`Shift`+`e` | Log out |
+
+The volume and keyboard-brightness keys are bound too, where the machine
+has them: `XF86AudioRaiseVolume` / `LowerVolume` / `Mute` and
+`XF86KbdBrightnessUp` / `Down`.
 
 Right-click the desktop for the root menu. `Alt` + drag moves a window from
 anywhere in it; `Alt` + right-drag resizes.
@@ -342,6 +347,9 @@ and it appears in the image; there is no other mechanism.
 | `vacuum-keys` | the shortcut list, read from rc.xml |
 | `vacuum-stat` | net rate and zram ratio, for the HUD |
 | `vacuum-wifi` | scan for networks and join one |
+| `vacuum-vol` | volume, for the panel and the media keys |
+| `vacuum-sound` | why there is no sound, and `--fix` for it |
+| `vacuum-kbd` | keyboard backlight, and `--probe` for what the machine has |
 | `vacuum-update` | update an installed system from this repository |
 | `vacuum-install` | install to disk (wraps `void-installer`) |
 | `vacuum-battery-warn` | tint2's low-battery hook, called by the panel |
@@ -412,6 +420,66 @@ The picker is a numbered list rather than a graphical menu on purpose: the
 same command then works on a bare tty, over SSH, and in a terminal window —
 including the case that matters most, a fresh install with no working
 network and no desktop yet.
+
+## Sound
+
+The panel carries the volume next to the clock. Scroll it to change,
+click to mute, right-click for `alsamixer`. The media keys do the same
+thing, and show the new level as a notification, because the panel only
+refreshes every two seconds and a key press should not have to wait.
+
+Both go through `vacuum-vol`, which reads PipeWire when it is running and
+falls back to the ALSA mixer when it is not — so volume still works over
+SSH, or in a session where PipeWire failed to start.
+
+### If there is no sound at all
+
+```sh
+vacuum-sound              # what is wrong
+sudo vacuum-sound --fix   # fix what can be fixed
+vacuum-sound --test       # a 440 Hz tone
+```
+
+Silence on a fresh install is almost never a missing driver. The kernel
+brings an HDA codec up with its outputs **muted and its levels at zero**,
+and something has to run `alsactl init` to turn them on. Until v0.2 nothing
+did: `alsa-utils` was not installed, so there was no `alsactl` on the system
+and no service to run it at boot. PipeWire reported a healthy sink at 100%
+the whole time, which is what made it confusing — the hardware mixer
+underneath it was off.
+
+v0.2 ships `alsa-utils` and enables the `alsa` service, which restores the
+mixer at boot and saves it at shutdown. `vacuum-sound` walks the whole
+chain — card, device nodes, mixer, group membership, service, PipeWire sink
+— and names the link that is broken rather than leaving you to guess.
+
+## Keyboard backlight
+
+```sh
+vacuum-kbd            # toggle, same as Super+K
+vacuum-kbd up|down    # for backlights with more than one level
+vacuum-kbd --probe    # what this machine actually exposes
+```
+
+To the kernel a keyboard backlight is just a LED: a driver that knows the
+machine registers it under `/sys/class/leds`, and a number written to
+`brightness` turns it on. What differs between laptops is whether such a
+driver exists at all — on some the backlight is wired to the embedded
+controller, the `Fn` key toggles it in hardware, and the operating system is
+never told. There is no software path on those, and no amount of
+configuration invents one.
+
+So `--probe` reports rather than guesses: every LED node present, the
+machine's own DMI identification, which vendor modules are loaded, and — if
+nothing turned up — the three reasons why, in order of likelihood.
+
+Writing to the node needs group `video`, granted by
+`/etc/udev/rules.d/70-vacuum-leds.rules`. That group rather than `input`,
+which is what `brightnessctl`'s equivalent rule uses: `input` carries read
+access to every input device on the machine, i.e. to every keystroke typed
+on it, which is a great deal to hand out for the sake of a backlight.
+`video` is already in the set `void-installer` gives a new user, so this
+works on an existing install with nothing to add.
 
 ## Palette
 

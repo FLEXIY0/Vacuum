@@ -294,6 +294,20 @@ if [ -f "$SRC/packages/services.list" ]; then
     done
 fi
 
+# --- udev -------------------------------------------------------------------
+# A new rule file only governs devices that appear after udev has read it,
+# so without this the permissions it grants arrive at the next reboot and
+# the feature that needs them looks broken until then.
+TAB=$(printf '\t')
+if [ "$CHANGED" -eq 1 ] && [ -z "${ROOT:-}" ] &&
+   command -v udevadm >/dev/null 2>&1 &&
+   grep -qE "^(install|update)$TAB[^$TAB]*$TAB${ROOT:-}/etc/udev/rules\.d/" \
+       "$PLAN" 2>/dev/null; then
+    msg "reloading udev rules"
+    udevadm control --reload >/dev/null 2>&1 || true
+    udevadm trigger --subsystem-match=leds >/dev/null 2>&1 || true
+fi
+
 # --- snapshot and stamp -----------------------------------------------------
 # The exact tree just applied becomes the baseline for the next run.
 rm -rf "$APPLIED"

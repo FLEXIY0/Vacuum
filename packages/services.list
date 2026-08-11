@@ -5,5 +5,6 @@ dbus            # session/system bus, needed by pcmanfm and wireplumber
 dhcpcd          # wired + wireless DHCP
 wpa_supplicant  # Wi-Fi
 acpid           # lid / power button events
+alsa            # restores the mixer at boot, saves it at shutdown
 zramen          # compressed RAM swap
 tlp             # power management

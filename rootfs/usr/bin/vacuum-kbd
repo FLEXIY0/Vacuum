@@ -1,0 +1,183 @@
+#!/bin/sh
+# Vacuum — keyboard backlight.
+#
+#   vacuum-kbd             toggle it            (bound to Super+K)
+#   vacuum-kbd on|off
+#   vacuum-kbd up|down     for machines with more than one level
+#   vacuum-kbd status
+#   vacuum-kbd --probe     what this machine actually exposes
+#
+# A keyboard backlight is a LED like any other as far as the kernel is
+# concerned: a driver that knows the machine registers it under
+# /sys/class/leds and a number written to `brightness` turns it on. What
+# differs between laptops is whether such a driver exists at all -- on some
+# the backlight is wired to the embedded controller and the Fn key toggles
+# it without the operating system ever being told.
+#
+# So there is nothing to configure here and nothing to guess: either a node
+# shows up or the machine does not offer one. `--probe` says which it is,
+# and prints enough detail to work out why.
+#
+# Writing to the node needs group `video`, granted by
+# /etc/udev/rules.d/70-vacuum-leds.rules.
+
+set -eu
+
+STATE="${XDG_CONFIG_HOME:-$HOME/.config}/vacuum"
+LAST="$STATE/kbd-level"
+
+# Overridable so the behaviour can be exercised against a fake sysfs tree.
+# There is no machine on which a keyboard backlight can be simulated, and
+# untested branches here are branches that fail in the dark.
+LEDS="${VACUUM_LEDS:-/sys/class/leds}"
+
+# Names vary by vendor: dell::kbd_backlight, asus::kbd_backlight,
+# tpacpi::kbd_backlight, smc::kbd_backlight, platform::kbd_backlight.
+find_led() {
+    for l in "$LEDS"/*kbd_backlight* "$LEDS"/*kbd*; do
+        [ -r "$l/brightness" ] && { printf '%s' "$l"; return 0; }
+    done
+    return 1
+}
+
+get()     { cat "$1/brightness" 2>/dev/null || echo 0; }
+get_max() { cat "$1/max_brightness" 2>/dev/null || echo 1; }
+
+put() {
+    led="$1"; val="$2"
+    if printf '%s\n' "$val" > "$led/brightness" 2>/dev/null; then
+        return 0
+    fi
+    cat >&2 <<EOF
+vacuum-kbd: cannot write to $led/brightness
+
+The permission rule may not have been applied yet. Either reboot, or:
+
+    sudo udevadm control --reload
+    sudo udevadm trigger --subsystem-match=leds
+
+and check that you are in the video group:  id -nG
+EOF
+    return 1
+}
+
+remember() {
+    mkdir -p "$STATE" 2>/dev/null || return 0
+    printf '%s\n' "$1" > "$LAST" 2>/dev/null || true
+}
+
+# --- probe ------------------------------------------------------------------
+if [ "${1:-}" = "--probe" ]; then
+    echo "LEDs the kernel is exposing:"
+    found=0
+    for l in "$LEDS"/*; do
+        [ -e "$l/brightness" ] || continue
+        found=1
+        printf '  %-32s max=%-4s %s\n' "$(basename "$l")" "$(get_max "$l")" \
+            "$(ls -l "$l/brightness" 2>/dev/null | awk '{ print $1, $3, $4 }')"
+    done
+    [ "$found" = 1 ] || echo "  (none)"
+
+    echo
+    if led=$(find_led); then
+        echo "Keyboard backlight: $led"
+        echo "  current  $(get "$led")  of  $(get_max "$led")"
+        if [ -w "$led/brightness" ]; then
+            echo "  writable by you -- vacuum-kbd will work"
+        else
+            echo "  NOT writable by you. Check: id -nG   (needs 'video')"
+            echo "  and that /etc/udev/rules.d/70-vacuum-leds.rules is installed."
+        fi
+    else
+        cat <<'EOF'
+No keyboard-backlight node found. In order of likelihood:
+
+  1. The machine has one, but the driver that would expose it is not
+     loaded. On a Dell that is dell-laptop, which pulls in dell-smbios:
+
+         sudo modprobe dell-laptop
+         vacuum-kbd --probe
+
+     If modprobe fails, the driver decided this model has no backlight
+     tokens in its SMBIOS tables -- which is the answer for most Dells
+     older than roughly 2014, and there is no software path on those.
+
+  2. The backlight is handled entirely by the embedded controller. The
+     Fn key toggles it in hardware and the operating system never sees
+     it. Nothing to install; the key simply works on its own.
+
+  3. The driver exists but under a name this looks for. Check the full
+     list above for anything backlight-shaped and say what you see.
+
+What the machine reports about itself:
+EOF
+        for f in /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name; do
+            [ -r "$f" ] && printf '  %s\n' "$(cat "$f")"
+        done
+        printf '  loaded modules: %s\n' \
+            "$(lsmod 2>/dev/null | awk '/^dell|^asus|^thinkpad|^applesmc/ { printf "%s ", $1 }' || echo none)"
+    fi
+    exit 0
+fi
+
+# --- everything else needs a node ------------------------------------------
+led=$(find_led) || {
+    echo "vacuum-kbd: this machine exposes no keyboard backlight." >&2
+    echo "Run  vacuum-kbd --probe  to see why." >&2
+    exit 1
+}
+
+max=$(get_max "$led")
+cur=$(get "$led")
+
+# Come back to the level that was last in use rather than straight to
+# maximum: on a three-level backlight the dim setting is often the one
+# people actually want. Anything unreadable or out of range falls back.
+wanted() {
+    want=$(cat "$LAST" 2>/dev/null || echo "$max")
+    if ! [ "$want" -gt 0 ] 2>/dev/null || ! [ "$want" -le "$max" ] 2>/dev/null; then
+        want="$max"
+    fi
+    printf '%s' "$want"
+}
+
+# Every branch below is written out rather than using `test && action`:
+# under `set -e` a false test is a failed command, and that would abort the
+# script exactly when the condition did not hold -- silently doing nothing.
+case "${1:-toggle}" in
+    on)
+        put "$led" "$(wanted)"
+        ;;
+    off)
+        if [ "$cur" -gt 0 ] 2>/dev/null; then remember "$cur"; fi
+        put "$led" 0
+        ;;
+    toggle)
+        if [ "$cur" -gt 0 ] 2>/dev/null; then
+            remember "$cur"
+            put "$led" 0
+        else
+            put "$led" "$(wanted)"
+        fi
+        ;;
+    up)
+        if [ "$cur" -lt "$max" ]; then cur=$((cur + 1)); fi
+        put "$led" "$cur"
+        remember "$cur"
+        ;;
+    down)
+        if [ "$cur" -gt 0 ]; then cur=$((cur - 1)); fi
+        put "$led" "$cur"
+        if [ "$cur" -gt 0 ]; then remember "$cur"; fi
+        ;;
+    status)
+        echo "$cur of $max  ($(basename "$led"))"
+        ;;
+    -h|--help)
+        sed -n '2,8p' "$0" | sed 's/^# \?//'
+        ;;
+    *)
+        echo "usage: ${0##*/} [on|off|toggle|up|down|status|--probe]" >&2
+        exit 1
+        ;;
+esac

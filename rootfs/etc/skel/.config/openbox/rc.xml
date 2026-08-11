@@ -215,20 +215,40 @@
       <action name="SendToDesktop"><to>4</to></action>
     </keybind>
 
-    <!-- audio, via wireplumber's wpctl -->
+    <!-- audio. Through vacuum-vol rather than straight to wpctl: it falls
+         back to the ALSA mixer when PipeWire is not running, and shows the
+         new level, which a bare wpctl call cannot do. -->
     <keybind key="XF86AudioRaiseVolume">
       <action name="Execute">
-        <command>wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+</command>
+        <command>vacuum-vol up</command>
       </action>
     </keybind>
     <keybind key="XF86AudioLowerVolume">
       <action name="Execute">
-        <command>wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-</command>
+        <command>vacuum-vol down</command>
       </action>
     </keybind>
     <keybind key="XF86AudioMute">
       <action name="Execute">
-        <command>wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle</command>
+        <command>vacuum-vol mute</command>
+      </action>
+    </keybind>
+
+    <!-- keyboard backlight. The dedicated keys are bound for machines that
+         have them; Super+K works on the ones that do not. -->
+    <keybind key="W-k">
+      <action name="Execute">
+        <command>vacuum-kbd toggle</command>
+      </action>
+    </keybind>
+    <keybind key="XF86KbdBrightnessUp">
+      <action name="Execute">
+        <command>vacuum-kbd up</command>
+      </action>
+    </keybind>
+    <keybind key="XF86KbdBrightnessDown">
+      <action name="Execute">
+        <command>vacuum-kbd down</command>
       </action>
     </keybind>
 

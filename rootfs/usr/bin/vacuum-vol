@@ -1,0 +1,151 @@
+#!/bin/sh
+# Vacuum — volume: read it for the panel, change it from the keyboard.
+#
+#   vacuum-vol                 print the current level
+#   vacuum-vol up|down|mute
+#   vacuum-vol set 40
+#   vacuum-vol --panel         the one line tint2's executor shows
+#
+# Two backends, tried in that order: wpctl when PipeWire is running, amixer
+# when it is not. The fallback is not decoration -- PipeWire is a user
+# service started by the session, so anything running before login, over
+# SSH, or on a session that failed to start still needs a way to change the
+# volume. Both are queried the same way, so the panel and the keys agree
+# whichever one is answering.
+#
+# If neither answers there is no audio device, which is a different problem;
+# `vacuum-sound` diagnoses that one.
+
+set -eu
+
+STEP="${VACUUM_VOL_STEP:-5}"
+LABEL="${VACUUM_VOL_LABEL:-♪}"
+
+VOL=""
+MUTED=0
+BACKEND=""
+
+# --- PipeWire ---------------------------------------------------------------
+pw_read() {
+    command -v wpctl >/dev/null 2>&1 || return 1
+    out=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null) || return 1
+    # "Volume: 0.45", or "Volume: 0.45 [MUTED]". wpctl reports a fraction,
+    # and can go above 1.0, so this rounds rather than truncates.
+    VOL=$(printf '%s\n' "$out" | awk '{
+        for (i = 1; i <= NF; i++)
+            if ($i ~ /^[0-9]+(\.[0-9]+)?$/) { printf "%d", $i * 100 + 0.5; exit }
+    }')
+    [ -n "$VOL" ] || return 1
+    case "$out" in *MUTED*) MUTED=1 ;; *) MUTED=0 ;; esac
+}
+
+# --- ALSA -------------------------------------------------------------------
+# Which control carries the volume depends on the codec: plenty of laptops
+# have no "Master" at all and put it on "PCM" or "Speaker".
+alsa_ctl() {
+    command -v amixer >/dev/null 2>&1 || return 1
+    for c in Master PCM Speaker Headphone Front; do
+        amixer sget "$c" >/dev/null 2>&1 && { printf '%s' "$c"; return 0; }
+    done
+    return 1
+}
+
+alsa_read() {
+    c=$(alsa_ctl) || return 1
+    out=$(amixer sget "$c" 2>/dev/null) || return 1
+    # "Front Left: Playback 45 [45%] [on]"
+    VOL=$(printf '%s\n' "$out" | awk -F'[][%]' '/[0-9]%/ { print $2; exit }')
+    [ -n "$VOL" ] || return 1
+    case "$out" in *"[off]"*) MUTED=1 ;; *) MUTED=0 ;; esac
+}
+
+read_state() {
+    if pw_read;   then BACKEND=pw;   return 0; fi
+    if alsa_read; then BACKEND=alsa; return 0; fi
+    BACKEND=""
+    return 1
+}
+
+# --- changing it ------------------------------------------------------------
+change() {
+    read_state || return 1
+    case "$BACKEND" in
+    pw)
+        case "$1" in
+            # Turning the volume up while muted should make sound; leaving
+            # it silent is the kind of thing people file bugs about.
+            up)   wpctl set-mute   @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
+                  wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "${STEP}%+" ;;
+            down) wpctl set-volume @DEFAULT_AUDIO_SINK@ "${STEP}%-" ;;
+            mute) wpctl set-mute   @DEFAULT_AUDIO_SINK@ toggle ;;
+            set)  wpctl set-mute   @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
+                  wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "$2%" ;;
+        esac
+        ;;
+    alsa)
+        c=$(alsa_ctl) || return 1
+        case "$1" in
+            up)   amixer -q sset "$c" "${STEP}%+" unmute ;;
+            down) amixer -q sset "$c" "${STEP}%-" ;;
+            mute) amixer -q sset "$c" toggle ;;
+            set)  amixer -q sset "$c" "$2%" unmute ;;
+        esac
+        ;;
+    esac
+    read_state || true
+}
+
+# --- output -----------------------------------------------------------------
+format() {
+    if   [ -z "$BACKEND" ]; then printf '%s n/a'  "$LABEL"
+    elif [ "$MUTED" = 1 ];  then printf '%s mute' "$LABEL"
+    else                         printf '%s %s%%' "$LABEL" "$VOL"
+    fi
+}
+
+# The panel only refreshes every couple of seconds, so a key press gets its
+# feedback here instead. One stack tag means repeated presses replace the
+# notification rather than stacking a column of them.
+notify() {
+    command -v notify-send >/dev/null 2>&1 || return 0
+    [ -n "${DISPLAY:-}" ] || return 0
+    if [ -z "$BACKEND" ]; then
+        notify-send -t 1500 -h string:x-dunst-stack-tag:vacuum-vol \
+            "Volume" "no audio device" || true
+    elif [ "$MUTED" = 1 ]; then
+        notify-send -t 1200 -h string:x-dunst-stack-tag:vacuum-vol \
+            "Volume" "muted" || true
+    else
+        notify-send -t 1200 -h string:x-dunst-stack-tag:vacuum-vol \
+            -h "int:value:$VOL" "Volume" "$VOL%" || true
+    fi
+}
+
+case "${1:-status}" in
+    up|down|mute)
+        change "$1" || true
+        notify
+        ;;
+    set)
+        [ $# -ge 2 ] || { echo "usage: ${0##*/} set 0-100" >&2; exit 1; }
+        change set "$2" || true
+        notify
+        ;;
+    status)
+        read_state || true
+        format; echo
+        ;;
+    --panel)
+        # tint2 re-runs this on a timer, so it must always print exactly one
+        # line and never block, even with no sound card present.
+        read_state || true
+        format; echo
+        ;;
+    -h|--help)
+        sed -n '2,9p' "$0" | sed 's/^# \?//'
+        ;;
+    *)
+        echo "usage: ${0##*/} [up|down|mute|set N|status|--panel]" >&2
+        exit 1
+        ;;
+esac

@@ -41,7 +41,7 @@ border_color = #262a31 100
 #---------------------------------------------
 # Panel
 #---------------------------------------------
-panel_items = TSBC
+panel_items = TSEBC
 panel_size = 100% 26
 panel_margin = 0 0
 panel_padding = 4 0 4
@@ -106,6 +106,30 @@ systray_sort = ascending
 systray_icon_size = 16
 systray_icon_asb = 100 0 0
 systray_monitor = 1
+
+#---------------------------------------------
+# Volume ('E' in panel_items)
+#---------------------------------------------
+# Polled rather than pushed: tint2 has no way to be told the volume moved.
+# Two seconds is the same beat the HUD runs at, and a key press does not
+# wait for it -- vacuum-vol raises a notification immediately, so the panel
+# is confirmation rather than feedback.
+execp = new
+execp_command = vacuum-vol --panel
+execp_interval = 2
+execp_continuous = 0
+execp_has_icon = 0
+execp_markup = 0
+execp_font = DejaVu Sans Mono 8
+execp_font_color = #d2d6dc 100
+execp_padding = 8 0
+execp_background_id = 0
+execp_centered = 1
+execp_tooltip = Scroll to change, click to mute, right-click for the mixer
+execp_lclick_command = vacuum-vol mute
+execp_rclick_command = vacuum-term -e alsamixer
+execp_uwheel_command = vacuum-vol up
+execp_dwheel_command = vacuum-vol down
 
 #---------------------------------------------
 # Battery (hidden entirely when there is no battery)

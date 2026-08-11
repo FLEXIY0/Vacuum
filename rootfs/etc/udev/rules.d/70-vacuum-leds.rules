@@ -1,0 +1,19 @@
+# Vacuum — let the logged-in user control the keyboard backlight.
+#
+# /sys/class/leds/*/brightness is root-owned, so without a rule like this
+# the only way to dim a keyboard is with sudo. The group is `video`
+# deliberately: it is already in the set void-installer gives a new user, so
+# this works on an existing install with nothing to add and nobody to log
+# out and back in.
+#
+# brightnessctl ships an equivalent rule that uses group `input` instead.
+# That group carries read access to every input device -- i.e. to every
+# keystroke typed on the machine -- which is a lot to hand out for the sake
+# of a backlight, so Vacuum does not use it.
+#
+# ACTION is matched on both add and change: LED devices can be re-registered
+# when a driver is reloaded, and the permissions have to survive that.
+
+ACTION=="add|change", SUBSYSTEM=="leds", KERNEL=="*kbd_backlight*", \
+    RUN+="/bin/chgrp video /sys/class/leds/%k/brightness", \
+    RUN+="/bin/chmod g+w /sys/class/leds/%k/brightness"

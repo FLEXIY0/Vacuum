@@ -62,6 +62,17 @@ cp -a /vacuum/rootfs/etc/vacuum-release /etc/
 rm -rf /root/.config
 cp -a /vacuum/rootfs/etc/skel/. /root/
 
+# There is no sound card here, so the panel's volume item would honestly
+# read "n/a" and the thing worth looking at -- that it renders, fits, and
+# lines up with the clock -- would not be visible. Stand in for wpctl so the
+# real parsing path in vacuum-vol still runs; only the readings are fake.
+cat > /usr/bin/wpctl <<'STUB'
+#!/bin/sh
+[ "$1" = get-volume ] && echo "Volume: 0.45"
+exit 0
+STUB
+chmod 755 /usr/bin/wpctl
+
 # --- the X server, started once and kept ------------------------------------
 want_restart=0
 xset q >/dev/null 2>&1 || want_restart=1
@@ -183,6 +194,6 @@ log "$SCENE @ $SIZE"
 # parse failure that silently fell back to a default.
 for f in /tmp/openbox.log /tmp/autostart.log; do
     [ -s "$f" ] || continue
-    grep -viE "glib slice|xRandr|Loading config|systray|panel items|nb monitors|transparency|uses scale|uevent|pixmap background|XSETTINGS|dpms|FcInit|AdwaitaLegacy" "$f" |
+    grep -viE "glib slice|xRandr|Loading config|systray|panel items|nb monitors|transparency|uses scale|uevent|pixmap background|XSETTINGS|dpms|FcInit|AdwaitaLegacy|Creating executor" "$f" |
         grep -vE "^[[:space:]]*$" | sed "s|^|[$(basename "$f" .log)] |" || true
 done

@@ -17,6 +17,12 @@
     <item label="Wi-Fi…">
       <action name="Execute"><command>vacuum-term -e vacuum-wifi</command></action>
     </item>
+    <item label="Volume mixer">
+      <action name="Execute"><command>vacuum-term -e alsamixer</command></action>
+    </item>
+    <item label="Keyboard light">
+      <action name="Execute"><command>vacuum-kbd toggle</command></action>
+    </item>
 
     <separator/>
 
@@ -26,6 +32,9 @@
       </item>
       <item label="Network status">
         <action name="Execute"><command>vacuum-term -e sh -c "vacuum-wifi --status; read -r _"</command></action>
+      </item>
+      <item label="Sound check">
+        <action name="Execute"><command>vacuum-term -e sh -c "vacuum-sound; read -r _"</command></action>
       </item>
       <item label="Install Vacuum to disk">
         <action name="Execute"><command>vacuum-term -e sudo vacuum-install</command></action>
