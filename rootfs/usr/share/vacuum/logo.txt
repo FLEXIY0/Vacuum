@@ -1,6 +1,8 @@
 
-        ·   ·
-     ·           ·        V A C U U M
-    ·             ·
-     ·           ·        void linux · runit · openbox
-        ·   ·
+  ⠀⠀⢀⣠⣤⡴⢤⢤⡀⠀⠀
+  ⠀⣰⡿⠋⠀⠀⠀⠀⠉⠢⠀    V A C U U M
+  ⠀⣿⡇⠀⠒⠙⠛⢷⣆⠀⠁
+  ⠀⠘⠻⣦⣠⠠⠀⠈⣿⡇⠀    void linux · runit · openbox
+  ⠈⢢⡀⠀⠀⠀⣀⣼⡟⠀⠀
+  ⠀⠀⠈⠛⠛⠛⠙⠁⠀⠀⠀
+

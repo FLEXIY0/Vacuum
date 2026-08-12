@@ -228,6 +228,9 @@ machine that has just come up.
 | `Alt`+`Tab` | Cycle windows |
 | `Super`+`F1` | Show or hide the side HUD |
 | `Super`+`k` | Keyboard backlight on or off |
+| `Print` | Screenshot the whole screen |
+| `Shift`+`Print` | Screenshot a region you drag |
+| `Alt`+`Print` | Screenshot the focused window |
 | `Super`+`Shift`+`e` | Log out |
 
 The volume and keyboard-brightness keys are bound too, where the machine
@@ -364,6 +367,7 @@ and it appears in the image; there is no other mechanism.
 | `vacuum-vol` | volume, for the panel and the media keys |
 | `vacuum-sound` | why there is no sound, and `--fix` for it |
 | `vacuum-kbd` | keyboard backlight, and `--probe` for what the machine has |
+| `vacuum-shot` | screenshots, bound to `Print` |
 | `vacuum-update` | update an installed system from this repository |
 | `vacuum-install` | install to disk (wraps `void-installer`) |
 | `vacuum-battery-warn` | tint2's low-battery hook, called by the panel |
@@ -502,6 +506,25 @@ access to every input device on the machine, i.e. to every keystroke typed
 on it, which is a great deal to hand out for the sake of a backlight.
 `video` is already in the set `void-installer` gives a new user, so this
 works on an existing install with nothing to add.
+
+## The mark
+
+The Vacuum mark is a Braille drawing, and it is stored exactly once — in
+`rootfs/usr/share/vacuum/logo.txt`, the file the shell greeting prints.
+
+The wallpaper does not contain a second copy of it. `mk/gen-wallpaper.py`
+reads that same file and decodes the Braille back into the dot grid it
+already is: every cell is two dots wide and four tall, and the low eight
+bits of the codepoint say which of them are lit. So the terminal and the
+desktop cannot drift apart, because there is only one drawing to change.
+
+```sh
+./mk/gen-wallpaper.py rootfs/usr/share/vacuum/wallpaper.png 1920 1080
+```
+
+`/etc/issue` keeps its plain-dot version on purpose. It is shown on the
+kernel console, whose built-in font has no Braille glyphs at all, so the
+mark would arrive there as a row of blanks or blocks.
 
 ## Palette
 

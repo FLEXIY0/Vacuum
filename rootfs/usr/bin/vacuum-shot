@@ -1,0 +1,63 @@
+#!/bin/sh
+# Vacuum — take a screenshot.
+#
+#   vacuum-shot            the whole screen     (Print)
+#   vacuum-shot --area     drag out a region    (Shift+Print)
+#   vacuum-shot --window   the focused window   (Alt+Print)
+#   vacuum-shot --delay N  wait N seconds first
+#
+# Files land in the XDG pictures directory, named for the moment they were
+# taken, and the notification carries the name -- a screenshot you cannot
+# find afterwards may as well not have been taken.
+
+set -eu
+
+command -v scrot >/dev/null 2>&1 || {
+    echo "vacuum-shot: scrot is not installed:  sudo xbps-install -S scrot" >&2
+    exit 1
+}
+
+# xdg-user-dirs writes this at session start; honour a relocated or
+# translated Pictures directory rather than assuming the English name.
+if [ -r "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs" ]; then
+    # shellcheck disable=SC1090,SC1091
+    . "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+fi
+DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}"
+mkdir -p "$DIR" 2>/dev/null || DIR="$HOME"
+
+MODE=screen
+DELAY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --area|-a)    MODE=area;   shift ;;
+        --window|-w)  MODE=window; shift ;;
+        --delay|-d)   DELAY="${2:?--delay needs seconds}"; shift 2 ;;
+        -h|--help)    sed -n '2,11p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *)            echo "unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+FILE="$DIR/vacuum-$(date +%Y%m%d-%H%M%S).png"
+
+case "$MODE" in
+    # -o overwrites, which cannot happen with a second-resolution name, but
+    # saves scrot from refusing if one somehow does.
+    screen) set -- -o ;;
+    window) set -- -u -b -o ;;
+    area)   set -- -s -f -o ;;
+esac
+[ "$DELAY" -gt 0 ] 2>/dev/null && set -- "$@" -d "$DELAY"
+
+# A cancelled region select is not a failure worth shouting about.
+if ! scrot "$@" "$FILE" 2>/dev/null; then
+    [ "$MODE" = area ] && exit 0
+    echo "vacuum-shot: scrot could not take the screenshot" >&2
+    exit 1
+fi
+
+if command -v notify-send >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+    notify-send -t 2500 -h string:x-dunst-stack-tag:vacuum-shot \
+        "Screenshot" "${FILE##*/}" || true
+fi
+echo "$FILE"

@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """Generate the Vacuum wallpaper as a PNG, with no third-party libraries.
 
-The image is a near-black field with one off-centre accent glow and a soft
-vignette -- the "dark minimalism" look, and it compresses to a few tens of
-kilobytes because the gradient is smooth.
+A near-black field with one off-centre accent glow and a soft vignette,
+with the Vacuum mark set in the middle as a field of dots.
+
+The mark is not drawn twice. It is read out of logo.txt -- the same file
+the shell greeting prints -- by decoding the Braille cells back into the
+dot grid they already are: each cell is two dots wide and four tall, and
+the codepoint's low eight bits say which of them are lit. So the wallpaper
+and the terminal cannot drift apart, because there is only one drawing.
 
     ./mk/gen-wallpaper.py rootfs/usr/share/vacuum/wallpaper.png [W H]
 """
 
 import math
+import os
 import struct
 import sys
 import zlib
@@ -22,6 +28,51 @@ GLOW_RADIUS = 0.62
 GLOW_STRENGTH = 0.30
 VIGNETTE = 0.55
 
+# The mark: how wide it sits on the canvas, and how big each dot is
+# relative to the spacing between them.
+LOGO = os.path.join(os.path.dirname(__file__), "..", "rootfs", "usr", "share",
+                    "vacuum", "logo.txt")
+MARK_WIDTH = 0.26
+MARK_Y = 0.46
+DOT_RADIUS = 0.30
+DOT_COLOR = (0x7F, 0xD4, 0xE2)
+
+
+def braille_dots(path):
+    """Return (dots, width, height) as a set of lit (x, y) grid positions.
+
+    Braille cells number their dots down the left column then down the
+    right, with the last two out of order for historical reasons -- hence
+    the explicit table rather than arithmetic.
+    """
+    bit_xy = {0: (0, 0), 1: (0, 1), 2: (0, 2), 3: (1, 0),
+              4: (1, 1), 5: (1, 2), 6: (0, 3), 7: (1, 3)}
+    rows = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            run = ""
+            best = ""
+            for ch in line:
+                if "\u2800" <= ch <= "\u28ff":
+                    run += ch
+                else:
+                    best, run = (run if len(run) > len(best) else best), ""
+            best = run if len(run) > len(best) else best
+            if best:
+                rows.append(best)
+    if not rows:
+        return set(), 0, 0
+
+    width = max(len(r) for r in rows)
+    dots = set()
+    for cell_y, row in enumerate(rows):
+        for cell_x, ch in enumerate(row):
+            bits = ord(ch) - 0x2800
+            for bit, (dx, dy) in bit_xy.items():
+                if bits & (1 << bit):
+                    dots.add((cell_x * 2 + dx, cell_y * 4 + dy))
+    return dots, width * 2, len(rows) * 4
+
 
 def chunk(tag, data):
     return (
@@ -34,6 +85,15 @@ def chunk(tag, data):
 
 def render(width, height):
     """Return the raw scanlines (filter byte + RGB triples) for the image."""
+    dots, dw, dh = braille_dots(LOGO)
+    # Grid spacing chosen so the mark occupies MARK_WIDTH of the canvas.
+    step = (MARK_WIDTH * width / dw) if dw else 0.0
+    dot_r = DOT_RADIUS * step
+    mark_x = (width - dw * step) / 2.0
+    mark_y = MARK_Y * height - dh * step / 2.0
+    # Only test pixels that could possibly be inside a dot.
+    reach = dot_r * 2.2
+
     cx, cy = GLOW_X * width, GLOW_Y * height
     # Normalise distances against the half-diagonal so the look is
     # resolution-independent.
@@ -55,8 +115,30 @@ def render(width, height):
             v = math.hypot(x - width / 2.0, vy) / vign_r
             shade = 1.0 - VIGNETTE * min(1.0, v) ** 2
 
-            for base, acc in zip(BG, ACCENT):
-                c = (base + (acc - base) * g) * shade
+            px = [(base + (acc - base) * g) * shade
+                  for base, acc in zip(BG, ACCENT)]
+
+            # The mark, drawn over the field. Coverage falls off across one
+            # pixel at the rim so the dots are not visibly stair-stepped at
+            # this size -- there is no anti-aliasing to inherit here.
+            if step:
+                gx = (x - mark_x) / step
+                gy = (y - mark_y) / step
+                best = 0.0
+                for ddx in (-1, 0, 1):
+                    for ddy in (-1, 0, 1):
+                        key = (int(gx) + ddx, int(gy) + ddy)
+                        if key not in dots:
+                            continue
+                        d = math.hypot((gx - key[0] - 0.5) * step,
+                                       (gy - key[1] - 0.5) * step)
+                        if d <= reach:
+                            a = min(1.0, max(0.0, (dot_r - d) + 0.5))
+                            best = max(best, a)
+                if best > 0.0:
+                    px = [p + (t - p) * best for p, t in zip(px, DOT_COLOR)]
+
+            for c in px:
                 row.append(max(0, min(255, int(c + 0.5))))
         rows += row
     return bytes(rows)

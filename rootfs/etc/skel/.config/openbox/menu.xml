@@ -20,6 +20,9 @@
     <item label="Volume mixer">
       <action name="Execute"><command>vacuum-term -e alsamixer</command></action>
     </item>
+    <item label="Screenshot">
+      <action name="Execute"><command>vacuum-shot</command></action>
+    </item>
     <item label="Keyboard light">
       <action name="Execute"><command>vacuum-kbd toggle</command></action>
     </item>

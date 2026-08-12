@@ -252,6 +252,23 @@
       </action>
     </keybind>
 
+    <!-- screenshots -->
+    <keybind key="Print">
+      <action name="Execute">
+        <command>vacuum-shot</command>
+      </action>
+    </keybind>
+    <keybind key="S-Print">
+      <action name="Execute">
+        <command>vacuum-shot --area</command>
+      </action>
+    </keybind>
+    <keybind key="A-Print">
+      <action name="Execute">
+        <command>vacuum-shot --window</command>
+      </action>
+    </keybind>
+
     <!-- session -->
     <keybind key="W-S-e">
       <action name="Exit">

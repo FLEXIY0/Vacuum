@@ -26,7 +26,7 @@ OUT="${3:-/out/preview.png}"
 
 # Bump the suffix when the package list below changes, so existing
 # containers reinstall instead of silently missing a new tool.
-READY=/var/lib/vacuum-preview-ready.3
+READY=/var/lib/vacuum-preview-ready.4
 SIZE_STAMP=/var/lib/vacuum-preview-size
 DISP=:99
 export DISPLAY="$DISP" HOME=/root
@@ -42,7 +42,7 @@ if [ ! -f "$READY" ]; then
     xbps-install -Sy >/dev/null 2>&1
     xbps-install -y \
         xorg-server-xvfb xsetroot xprop xset xdpyinfo setxkbmap \
-        openbox tint2 dunst dmenu st feh nitrogen pcmanfm conky \
+        openbox tint2 dunst dmenu st feh nitrogen pcmanfm conky scrot \
         dbus dbus-x11 libnotify xdotool ImageMagick procps-ng \
         dejavu-fonts-ttf font-misc-misc terminus-font \
         hicolor-icon-theme adwaita-icon-theme xdg-user-dirs bash \
