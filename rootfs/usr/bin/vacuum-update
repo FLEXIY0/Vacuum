@@ -264,6 +264,9 @@ while IFS="$(printf '\t')" read -r action src dest owner; do
             mkdir -p "$(dirname "$dest")"
             cp -a "$src" "$dest"
             [ -n "$owner" ] && chown "$owner" "$dest"
+            # A .new left by an earlier run now says the same thing as the
+            # file beside it; keeping it only invites a pointless diff.
+            cmp -s "$dest.new" "$dest" 2>/dev/null && rm -f "$dest.new"
             ;;
         update)
             open_backup
@@ -272,6 +275,7 @@ while IFS="$(printf '\t')" read -r action src dest owner; do
             cp -a "$dest" "$BACKUP/files/$rel"
             cp -a "$src" "$dest"
             [ -n "$owner" ] && chown "$owner" "$dest"
+            cmp -s "$dest.new" "$dest" 2>/dev/null && rm -f "$dest.new"
             ;;
         yours)
             # Refresh only when it would change: otherwise every run
@@ -385,6 +389,18 @@ if grep -q '^SOURCE_REF=' "$RELEASE" 2>/dev/null; then
     sed -i "s|^SOURCE_REF=.*|SOURCE_REF=\"$REF\"|" "$RELEASE"
 else
     printf 'SOURCE_REF="%s"\n' "$REF" >> "$RELEASE"
+fi
+
+SELFPATH=$(command -v "$SELF" 2>/dev/null || true)
+: "${SELFPATH:=$ROOT/usr/bin/$SELF}"
+if [ -f "$SELFPATH.new" ]; then
+    # This is not a detail to leave to be discovered: the run that would
+    # have used the new behaviour is the one that just finished without it.
+    msg "the updater itself has a newer version waiting"
+    note "your copy of $SELF was kept because it differs from the baseline,"
+    note "so anything new in it -- options included -- is not available yet:"
+    note ""
+    note "    sudo cp $SELFPATH.new $SELFPATH && sudo $SELF"
 fi
 
 msg "done: $n_install installed, $n_update updated, $n_yours of yours kept"
